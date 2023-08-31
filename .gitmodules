@@ -1,0 +1,3 @@
+[submodule "u8_emu"]
+	path = u8_emu
+	url = https://github.com/Fraserbc/u8_emu
