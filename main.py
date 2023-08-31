@@ -11,7 +11,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.font
 import tkinter.messagebox
-from enum import Enum
+from enum import IntEnum
 
 import config
 
@@ -84,12 +84,12 @@ u8_core_t._fields_ = [
 		("mem",		u8_mem_t)
 	]
 
-class u8_mem_type_e(Enum):	
+class u8_mem_type_e(IntEnum):	
 	U8_REGION_BOTH = 0
 	U8_REGION_DATA = 1
 	U8_REGION_CODE = 2
 
-class u8_mem_acc_e(Enum):
+class u8_mem_acc_e(IntEnum):
 	U8_MACC_ARR  = 0
 	U8_MACC_FUNC = 1
 
