@@ -609,12 +609,12 @@ class Sim:
 		def press_cb(event):
 			for k, v in config.keymap.items():
 				p = v[0]
-				if event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
-					if k is None:
-						self.reset_core(False)
+				if (event.type == 4 and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) or (event.type != 4 and event.keysym.lower() in v[1:]):
+					if k is None: self.reset_core(False)
 					else:
 						self.write_dmem(0x8e01, 1 << k[0])
 						self.write_dmem(0x8e02, 1 << k[1])
+
 
 		def release_cb(event):
 			self.write_dmem(0x8e01, 0)
@@ -622,16 +622,10 @@ class Sim:
 
 		embed_pygame.bind('<ButtonPress-1>', press_cb)
 		embed_pygame.bind('<ButtonRelease-1>', release_cb)
+		embed_pygame.bind('<KeyPress>', press_cb)
+		embed_pygame.bind('<KeyRelease>', release_cb)
 
 		self.last_ready = 0
-		def keyboard(self):
-			ready = self.read_dmem(0x8e00, 1)[0]
-
-			if (self.last_ready == 0) and (ready == 1):
-				self.write_dmem(0x8e01, 0)
-				self.write_dmem(0x8e02, 0)
-			
-			self.last_ready = ready
 
 		if os.name != 'nt': self.root.update()
 
@@ -765,12 +759,22 @@ class Sim:
 		try: self.rc_menu.tk_popup(x.x_root, x.y_root)
 		finally: self.rc_menu.grab_release()
 
+	def keyboard(self):
+		ready = self.read_dmem(0x8e00, 1)[0]
+
+		if (self.last_ready == 0) and (ready == 1):
+			self.write_dmem(0x8e01, 0)
+			self.write_dmem(0x8e02, 0)
+		
+		self.last_ready = ready
+
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
 
 		self.ok = False
 		try: self.sim.u8_step()
 		except OSError as e: logging.error('(exception thrown at runtime)' + str(e)[10:])
+		self.keyboard()
 		self.ok = True
 
 	def core_step_loop(self):
