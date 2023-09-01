@@ -4,10 +4,7 @@ Most of the code was based on the [SimU8 frontend](https://github.com/gamingwith
 This frontend serves as a replacement to Delta's own frontend that uses `ncurses`. Currently, it's best to use an emulator ROM, as the keyboard for real ROMs doesn't work at the moment.
 
 # Installation
-Because SimU8 was written in C and this frontend was written in Python, a **shared library** is needed to use the frontend.
-That's not really a big deal, however I thought I should mention it, as C compilers are usually used for compiling binaries and not shared libraries.
-
-1. Clone this repository and the SimU8 submodule:
+1. Clone this repository and the submodule:
 ```
 git clone https://github.com/gamingwithevets/u8-emu-frontend.git
 git submodule update
