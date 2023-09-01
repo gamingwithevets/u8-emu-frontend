@@ -148,8 +148,8 @@ class Core:
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0xF8000, 0x00000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0xF8000, 0x00000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0xF8000, 0x00000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0xF8000, 0x08000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0xF8000, 0x08000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0xF0000, 0x10000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0xF0000, 0x80000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 		]
@@ -426,18 +426,18 @@ class Jump(tk.Toplevel):
 		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
 		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, 4, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_csr_pc).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: set_csr_pc())
+		self.bind('<Return>', lambda x: self.set_csr_pc())
 		self.bind('<Escape>', lambda x: self.withdraw())
 
 	def set_csr_pc(self):
 		csr_entry = self.csr_entry.get()
 		pc_entry = self.pc_entry.get()
-		self.sim.get_var('CSR', ctypes.c_uint8).value = int(csr_entry, 16) if csr_entry else 0
-		self.sim.get_var('PC', ctypes.c_uint16).value = int(pc_entry, 16) if pc_entry else 0
-		print_regs()
+		self.sim.sim.core.regs.csr = int(csr_entry, 16) if csr_entry else 0
+		self.sim.sim.core.regs.pc = int(pc_entry, 16) if pc_entry else 0
+		self.sim.print_regs()
 		self.withdraw()
 
-		self.csr_entry.delete(0, 'end'); jump_csr_entry.insert(0, '0')
+		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
 		self.pc_entry.delete(0, 'end')
 
 class Brkpoint(tk.Toplevel):
@@ -460,13 +460,13 @@ class Brkpoint(tk.Toplevel):
 		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
 		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, 4, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: set_brkpoint())
+		self.bind('<Return>', lambda x: self.set_brkpoint())
 		self.bind('<Escape>', lambda x: self.withdraw())
 
 	def set_brkpoint(self):
 		csr_entry = self.csr_entry.get()
 		pc_entry = self.pc_entry.get()
-		self.sim.brkpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
+		self.sim.breakpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
 		self.print_regs()
 		self.withdraw()
 
@@ -474,8 +474,7 @@ class Brkpoint(tk.Toplevel):
 		self.pc_entry.delete(0, 'end')
 
 	def clear_brkpoint():
-		global brkpoint
-		self.sim.brkpoint = None
+		self.sim.breakpoint = None
 		self.print_regs()
 
 class Write(tk.Toplevel):
@@ -507,7 +506,7 @@ class Write(tk.Toplevel):
 		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, 2, '%S', '%P', '%d')); self.byte_entry.pack(side = 'right')
 		self.byte_entry.insert(0, '0')
 		ttk.Button(self, text = 'OK', command = self.write).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: write())
+		self.bind('<Return>', lambda x: self.write())
 		self.bind('<Escape>', lambda x: self.withdraw())
 
 	def write(self):
@@ -536,7 +535,7 @@ class DataMem(tk.Toplevel):
 
 		self.segment_var = tk.StringVar(); self.segment_var.set('RAM (00:8000H - 00:8DFFH)')
 		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = ['RAM (00:8000H - 00:8DFFH)', 'SFRs (00:F000H - 00:FFFFH)'])
-		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: get_mem(False))
+		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
 		self.segment_cb.pack()
 
 		self.code_frame = ttk.Frame(self)
@@ -597,8 +596,6 @@ class Sim:
 		self.keys = []
 		for key in [i[1:] for i in config.keymap.values()]: self.keys.extend(key)
 
-		self.root.bind('<KeyPress>', lambda x: self.keys_pressed.append(x.keysym.lower()) if x.keysym.lower() in self.keys else 'break')
-		self.root.bind('<KeyRelease>', lambda x: self.keys_pressed.remove(x.keysym.lower()) if x.keysym.lower() in self.keys_pressed else 'break')
 
 		self.jump = Jump(self)
 		self.brkpoint = Brkpoint(self)
@@ -608,6 +605,13 @@ class Sim:
 		embed_pygame = tk.Frame(self.root, width = config.width, height = config.height)
 		embed_pygame.pack(side = 'left')
 		embed_pygame.focus_set()
+
+		embed_pygame.bind('<ButtonPress-1>', self.press_cb)
+		embed_pygame.bind('<ButtonRelease-1>', self.release_cb)
+		embed_pygame.bind('<KeyPress>', self.press_cb)
+		embed_pygame.bind('<KeyRelease>', self.release_cb)
+
+		if os.name != 'nt': self.root.update()
 
 		self.info_label = tk.Label(self.root, text = 'Loading...', width = config.width, height = config.height, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
 		self.info_label.pack(side = 'left')
@@ -653,7 +657,7 @@ class Sim:
 		self.bind_('s', lambda x: self.set_single_step(True))
 		self.bind_('p', lambda x: self.set_single_step(False))
 		self.bind_('j', lambda x: self.jump.deiconify())
-		self.bind_('b', lambda x: self.brkpoint.deiconify());
+		self.bind_('b', lambda x: self.brkpoint.deiconify())
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.show_regs.set(not self.show_regs.get()))
@@ -664,7 +668,7 @@ class Sim:
 		self.single_step = True
 		self.ok = True
 		self.step = False
-		self.brkpoint = None
+		self.breakpoint = None
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
@@ -697,8 +701,19 @@ class Sim:
 		else: return True
 
 	def read_dmem(self, addr, num_bytes, segment = 0):
-		dt = self.sim.read_mem_data(segment, addr, num_bytes)
-		return dt.to_bytes(num_bytes, 'little')
+		data = b''
+		bytes_grabbed = 0
+
+		while bytes_grabbed < num_bytes:
+			remaining = num_bytes - bytes_grabbed
+			if remaining >= 8: grab = 8
+			else: grab = remaining
+
+			dt = self.sim.read_mem_data(segment, addr + bytes_grabbed, grab)
+			data += dt.to_bytes(grab, 'little')
+			bytes_grabbed += grab
+
+		return data
 
 	def write_dmem(self, addr, byte, segment = 0): self.sim.write_mem_data(segment, addr, 1, byte)
 
@@ -727,25 +742,18 @@ class Sim:
 		try: self.rc_menu.tk_popup(x.x_root, x.y_root)
 		finally: self.rc_menu.grab_release()
 
-	def keyboard(self):
-		ki = 0xff
-		ko = self.read_dmem(0xf046, 1)[0]
-		try:
-			press = pygame.mouse.get_pressed()[0]
-			video_inited = True
-		except pygame.error:
-			press = False
-			video_inited = False
-
-		pos = pygame.mouse.get_pos() if video_inited else (0, 0)
-
-		key_pressed = False
+	def press_cb(self, event):
 		for k, v in config.keymap.items():
 			p = v[0]
-			if (press and pos[0] in range(p[0], p[0]+p[2]) and pos[1] in range(p[1], p[1]+p[3])) or (v[1] in self.keys_pressed or v[2] in self.keys_pressed):
+			if (event.type == 4 and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) or (event.type != 4 and event.keysym.lower() in v[1:]):
 				if k is None: self.reset_core(False)
-				elif ko & (1 << k[1]): ki &= ~(1 << k[0])
-		self.write_dmem(0xf040, ki)
+				else:
+					self.write_dmem(0x8e01, 1 << k[0])
+					self.write_dmem(0x8e02, 1 << k[1])
+
+	def release_cb(self, event = None):
+		self.write_dmem(0x8e01, 0)
+		self.write_dmem(0x8e02, 0)
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
@@ -753,7 +761,6 @@ class Sim:
 		self.ok = False
 		try: self.sim.u8_step()
 		except OSError as e: logging.error('(exception thrown at runtime)' + str(e)[10:])
-		self.keyboard()
 		
 		self.ok = True
 
@@ -799,7 +806,7 @@ EPSW1           {regs.epsw[0]:02X}
 EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
-{'Breakpoint set to ' + format(self.brkpoint >> 16, 'X') + ':' + format(self.brkpoint % 0x10000, '04X') + 'H' if self.brkpoint is not None else 'No breakpoint set.'}
+{'Breakpoint set to ' + format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'No breakpoint set.'}
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):

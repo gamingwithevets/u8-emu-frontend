@@ -10,7 +10,7 @@ rom_file = 'rom.bin'
 status_bar_path = 'images/interface_es_bar.png'
 
 # Path to the interface image.
-interface_path = 'images/interface_esp_991esp.png'
+interface_path = 'images/interface_esp_83gtp.png'
 
 # Settings for the Tkinter window.
 
@@ -31,7 +31,7 @@ console_bg = '#0c0c0c'
 console_fg = '#cccccc'
 
 # Pygame text color.
-pygame_color = (0, 0, 0)
+pygame_color = (255, 255, 255)
 
 # Hex display window size.
 data_mem_width = 700
