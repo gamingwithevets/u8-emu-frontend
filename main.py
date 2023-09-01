@@ -132,7 +132,7 @@ sim_lib.read_mem_code.restype = ctypes.c_uint64
 
 sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 sim_lib.write_mem_data.restype = None
-sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
+sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes	.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 sim_lib.write_mem_code.restype = None
 
 ##
@@ -968,11 +968,11 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None else '
 
 		for i in range(len(screen_data_status_bar)):
 			crop = config.status_bar_crops[i]
-			if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (58 + crop[0], 132), crop)
+			if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 
 		for y in range(31):
 			for x in range(96):
-				if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (58 + x*3, 144 + y*3, 3, 3))
+				if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44, config.pygame_color, anchor = 'midtop')

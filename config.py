@@ -36,6 +36,10 @@ console_fg = '#cccccc'
 # Pygame text color.
 pygame_color = (255, 255, 255)
 
+# Top left corner of the screen.
+screen_tl_w = 58
+screen_tl_h = 132
+
 # Hex display window size.
 data_mem_width = 700
 data_mem_height = 600
