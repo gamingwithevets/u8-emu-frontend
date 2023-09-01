@@ -19,7 +19,7 @@ width = 405
 height = 816
 
 # Name of the Tkinter window.
-root_w_name = 'fx-570ES PLUS Emulator'
+root_w_name = 'fx-83GT PLUS Emulator'
 
 # "Console" text font.
 console_font = ('Consolas', 11)
