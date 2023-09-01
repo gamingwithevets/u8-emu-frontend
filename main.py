@@ -514,7 +514,7 @@ class Write(tk.Toplevel):
 		seg = self.csr_entry.get(); seg = int(seg, 16) if seg else 0
 		adr = self.pc_entry.get(); adr = int(adr, 16) if adr else 0
 		byte = self.byte_entry.get(); byte = int(byte, 16) if byte else 0
-		self.dmem(adr, byte, seg)
+		self.sim.write_dmem(adr, byte, seg)
 		self.sim.print_regs()
 		self.sim.data_mem.get_mem()
 		self.withdraw()
@@ -597,7 +597,6 @@ class Sim:
 		self.keys = []
 		for key in [i[1:] for i in config.keymap.values()]: self.keys.extend(key)
 
-
 		self.jump = Jump(self)
 		self.brkpoint = Brkpoint(self)
 		self.write = Write(self)
@@ -608,15 +607,21 @@ class Sim:
 		embed_pygame.focus_set()
 
 		def press_cb(event):
+			ki = self.read_dmem(0xf040, 1)[0]
+			ko = self.read_dmem(0xf046, 1)[0]
+
 			for k, v in config.keymap.items():
 				p = v[0]
 				if event.keysym.lower() in v[1:]:
-					if k is None: self.reset_core(False)
-					else:
-						self.write_dmem(0x8e01, 1 << k[0])
-						self.write_dmem(0x8e02, 1 << k[1])
+					if not config.real_kb:
+						if k is None: self.reset_core(False)
+						else:
+							self.write_dmem(0x8e01, 1 << k[0])
+							self.write_dmem(0x8e02, 1 << k[1])
 				elif event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
 					if k is None: self.reset_core(False)
+					elif config.real_kb:
+						if ko & (1 << k[1]): self.write_dmem(0xf040, ki & ~(1 << k[0]))
 					else:
 						self.write_dmem(0x8e01, 1 << k[0])
 						self.write_dmem(0x8e02, 1 << k[1])
@@ -625,10 +630,14 @@ class Sim:
 			self.write_dmem(0x8e01, 0)
 			self.write_dmem(0x8e02, 0)
 
+		if config.real_kb:
+			self.root.bind('<KeyPress>', lambda x: self.keys_pressed.append(x.keysym.lower()) if x.keysym.lower() in self.keys else 'break')
+			self.root.bind('<KeyRelease>', lambda x: self.keys_pressed.remove(x.keysym.lower()) if x.keysym.lower() in self.keys_pressed else 'break')
+		else:
+			embed_pygame.bind('<KeyPress>', press_cb)
+			embed_pygame.bind('<KeyRelease>', release_cb)
 		embed_pygame.bind('<ButtonPress-1>', press_cb)
 		embed_pygame.bind('<ButtonRelease-1>', release_cb)
-		embed_pygame.bind('<KeyPress>', press_cb)
-		embed_pygame.bind('<KeyRelease>', release_cb)
 
 		self.last_ready = 0
 
@@ -697,8 +706,7 @@ class Sim:
 		self.running = True
 
 		self.ips = 0
-		self.ips_start = 0
-		self.ips_ctr = 0
+		self.ips_start = time.time()
 
 	def run(self):
 		self.reset_core()
@@ -770,13 +778,24 @@ class Sim:
 		finally: self.rc_menu.grab_release()
 
 	def keyboard(self):
-		ready = self.read_dmem(0x8e00, 1)[0]
+		if config.real_kb:
+			ki = 0xff
+			ko = self.read_dmem(0xf046, 1)[0]
 
-		if (self.last_ready == 0) and (ready == 1):
-			self.write_dmem(0x8e01, 0)
-			self.write_dmem(0x8e02, 0)
-		
-		self.last_ready = ready
+			for k, v in config.keymap.items():
+				if v[1] in self.keys_pressed or v[2] in self.keys_pressed:
+					if k is None: self.reset_core(False)
+					elif ko & (1 << k[1]): ki &= ~(1 << k[0])
+			self.write_dmem(0xf040, ki)
+
+		else:
+			ready = self.read_dmem(0x8e00, 1)[0]
+
+			if (self.last_ready == 0) and (ready == 1):
+				self.write_dmem(0x8e01, 0)
+				self.write_dmem(0x8e02, 0)
+			
+			self.last_ready = ready
 
 	def sbycon(self):
 		sbycon = self.read_dmem(0xf009, 1)[0]
@@ -815,11 +834,10 @@ class Sim:
 	def print_regs(self):
 		regs = self.sim.core.regs
 
-		if self.ips_ctr % 1000 == 0:
-			cur = time.time()
-			self.ips = 1000 / (time.time()- self.ips_start)
-			self.ips_start = cur
-		self.ips_ctr += 1
+		cur = time.time()
+		try: self.ips = 1000 / (cur - self.ips_start)
+		except ZeroDivisionError: self.ips = None
+		self.ips_start = cur
 
 		csr = regs.csr
 		pc = regs.pc
@@ -860,8 +878,7 @@ EPSW3           {regs.epsw[2]:02X}
 
 Other information:
 Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
-Instructions ran         {self.ips_ctr}
-Instructions per second  {self.ips}
+Instructions per second  {format(self.ips, '.1f') if self.ips is not None else 'None'}
 
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
