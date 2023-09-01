@@ -3,6 +3,7 @@ import sys
 import time
 import ctypes
 import pygame
+import struct
 import logging
 import functools
 import threading
@@ -609,12 +610,16 @@ class Sim:
 		def press_cb(event):
 			for k, v in config.keymap.items():
 				p = v[0]
-				if (event.type == 4 and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) or (event.type != 4 and event.keysym.lower() in v[1:]):
+				if event.keysym.lower() in v[1:]:
 					if k is None: self.reset_core(False)
 					else:
 						self.write_dmem(0x8e01, 1 << k[0])
 						self.write_dmem(0x8e02, 1 << k[1])
-
+				elif event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
+					if k is None: self.reset_core(False)
+					else:
+						self.write_dmem(0x8e01, 1 << k[0])
+						self.write_dmem(0x8e02, 1 << k[1])
 
 		def release_cb(event):
 			self.write_dmem(0x8e01, 0)
@@ -689,6 +694,11 @@ class Sim:
 
 		self.prev_csr_pc = None
 		self.last_ready = 0
+		self.running = True
+
+		self.ips = 0
+		self.ips_start = 0
+		self.ips_ctr = 0
 
 	def run(self):
 		self.reset_core()
@@ -768,20 +778,48 @@ class Sim:
 		
 		self.last_ready = ready
 
+	def sbycon(self):
+		sbycon = self.read_dmem(0xf009, 1)[0]
+
+		if sbycon == 2:
+			self.running = False
+			self.write_dmem(0xf009, 0)
+
+	def timer(self):
+		counter = struct.unpack("<H", self.read_dmem(0xf020, 2))[0]
+		counter += 0xFFFF
+		counter &= 0xFFFF
+		self.write_dmem(0xf020, counter & 0xFF)
+		self.write_dmem(0xf021, counter >> 8)
+
+		if counter == 0 and self.running == False: self.running = True
+
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
 
-		self.ok = False
-		try: self.sim.u8_step()
-		except OSError as e: logging.error('(exception thrown at runtime)' + str(e)[10:])
 		self.keyboard()
-		self.ok = True
+		self.sbycon()
+		self.timer()
+
+		if self.running:
+			self.ok = False
+			
+			try: self.sim.u8_step()
+			except OSError as e: logging.error('(exception thrown at runtime)' + str(e)[10:])
+
+			self.ok = True
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
 
 	def print_regs(self):
 		regs = self.sim.core.regs
+
+		if self.ips_ctr % 1000 == 0:
+			cur = time.time()
+			self.ips = 1000 / (time.time()- self.ips_start)
+			self.ips_start = cur
+		self.ips_ctr += 1
 
 		csr = regs.csr
 		pc = regs.pc
@@ -819,7 +857,12 @@ EPSW1           {regs.epsw[0]:02X}
 EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
-{'Breakpoint set to ' + format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'No breakpoint set.'}
+
+Other information:
+Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
+Instructions ran         {self.ips_ctr}
+Instructions per second  {self.ips}
+
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
