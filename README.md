@@ -5,12 +5,12 @@ This frontend serves as a replacement to Delta's own frontend that uses `ncurses
 
 # Installation
 1. Clone this repository and the submodule:
-```
+```shell
 git clone https://github.com/gamingwithevets/u8-emu-frontend.git
 git submodule update
 ```
 2. Go to the repo directory and run the command below (this assumes the submodule is located in the `u8_emu` directory):
-```
+```shell
 gcc $(shell find u8_emu/src/core -name "*.c") -O3 -fPIC -shared -o core.so
 ```
 3. Edit the `config.py` file as needed.
