@@ -11,7 +11,7 @@ git submodule update
 ```
 2. Go to the repo directory and run the command below (this assumes the submodule is located in the `u8_emu` directory):
 ```
-gcc u8_emu/src/core.c u8_emu/src/mmu.c -O3 -fPIC -shared -o core.so
+gcc $(shell find u8_emu/src/core -name "*.c") -O3 -fPIC -shared -o core.so
 ```
 3. Edit the `config.py` file as needed.
 4. Run `python main.py` (or `python3 main.py`) and you're done.
