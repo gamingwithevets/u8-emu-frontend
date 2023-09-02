@@ -468,7 +468,7 @@ class Brkpoint(tk.Toplevel):
 		csr_entry = self.csr_entry.get()
 		pc_entry = self.pc_entry.get()
 		self.sim.breakpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
-		self.print_regs()
+		self.sim.print_regs()
 		self.withdraw()
 
 		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
@@ -476,7 +476,7 @@ class Brkpoint(tk.Toplevel):
 
 	def clear_brkpoint():
 		self.sim.breakpoint = None
-		self.print_regs()
+		self.sim.print_regs()
 
 class Write(tk.Toplevel):
 	def __init__(self, sim):
@@ -769,7 +769,7 @@ class Sim:
 
 		self.single_step = val
 		if val:
-			self.print_regs()
+			self.sim.print_regs()
 			self.data_mem.get_mem()
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
 
