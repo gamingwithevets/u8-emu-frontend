@@ -14,7 +14,7 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
-import config
+import config#_fx570esp as config
 
 logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
 
@@ -593,7 +593,7 @@ class Sim:
 		self.init_sp = rom[0] | rom[1] << 8
 		self.init_pc = rom[2] | rom[3] << 8
 
-		self.keys_pressed = []
+		self.keys_pressed = set()
 		self.keys = []
 		for key in [i[1:] for i in config.keymap.values()]: self.keys.extend(key)
 
@@ -607,39 +607,25 @@ class Sim:
 		embed_pygame.focus_set()
 
 		def press_cb(event):
-			ki = self.read_dmem(0xf040, 1)[0]
-			ko = self.read_dmem(0xf046, 1)[0]
-
 			for k, v in config.keymap.items():
 				p = v[0]
-				if event.keysym.lower() in v[1:]:
-					if not config.real_kb:
-						if k is None: self.reset_core(False)
-						else:
-							self.write_dmem(0x8e01, 1 << k[0])
-							self.write_dmem(0x8e02, 1 << k[1])
-				elif event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
+				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
 					if k is None: self.reset_core(False)
-					elif config.real_kb:
-						if ko & (1 << k[1]): self.write_dmem(0xf040, ki & ~(1 << k[0]))
+					elif config.real_kb: self.keys_pressed.add(k)
 					else:
 						self.write_dmem(0x8e01, 1 << k[0])
 						self.write_dmem(0x8e02, 1 << k[1])
 
 		def release_cb(event):
-			self.write_dmem(0x8e01, 0)
-			self.write_dmem(0x8e02, 0)
+			if config.real_kb: self.keys_pressed.clear()
+			else:
+				self.write_dmem(0x8e01, 0)
+				self.write_dmem(0x8e02, 0)
 
-		if config.real_kb:
-			self.root.bind('<KeyPress>', lambda x: self.keys_pressed.append(x.keysym.lower()) if x.keysym.lower() in self.keys else 'break')
-			self.root.bind('<KeyRelease>', lambda x: self.keys_pressed.remove(x.keysym.lower()) if x.keysym.lower() in self.keys_pressed else 'break')
-		else:
-			embed_pygame.bind('<KeyPress>', press_cb)
-			embed_pygame.bind('<KeyRelease>', release_cb)
+		embed_pygame.bind('<KeyPress>', press_cb)
+		embed_pygame.bind('<KeyRelease>', release_cb)
 		embed_pygame.bind('<ButtonPress-1>', press_cb)
 		embed_pygame.bind('<ButtonRelease-1>', release_cb)
-
-		self.last_ready = 0
 
 		if os.name != 'nt': self.root.update()
 
@@ -703,10 +689,11 @@ class Sim:
 
 		self.prev_csr_pc = None
 		self.last_ready = 0
-		self.running = True
+		self.stop_mode = False
 
 		self.ips = 0
 		self.ips_start = time.time()
+		self.ips_ctr = 0
 
 	def run(self):
 		self.reset_core()
@@ -769,7 +756,7 @@ class Sim:
 
 		self.single_step = val
 		if val:
-			self.sim.print_regs()
+			self.print_regs()
 			self.data_mem.get_mem()
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
 
@@ -782,16 +769,14 @@ class Sim:
 			ki = 0xff
 			ko = self.read_dmem(0xf046, 1)[0]
 
-			for k, v in config.keymap.items():
-				if v[1] in self.keys_pressed or v[2] in self.keys_pressed:
-					if k is None: self.reset_core(False)
-					elif ko & (1 << k[1]): ki &= ~(1 << k[0])
-			self.write_dmem(0xf040, ki)
+			for ki_val, ko_val in self.keys_pressed:
+				if ko & (1 << ko_val): ki &= ~(1 << ki_val)
 
+			self.write_dmem(0xf040, ki)
 		else:
 			ready = self.read_dmem(0x8e00, 1)[0]
 
-			if (self.last_ready == 0) and (ready == 1):
+			if not self.last_ready and ready:
 				self.write_dmem(0x8e01, 0)
 				self.write_dmem(0x8e02, 0)
 			
@@ -801,17 +786,20 @@ class Sim:
 		sbycon = self.read_dmem(0xf009, 1)[0]
 
 		if sbycon == 2:
-			self.running = False
+			self.stop_mode = True
 			self.write_dmem(0xf009, 0)
 
 	def timer(self):
-		counter = struct.unpack("<H", self.read_dmem(0xf020, 2))[0]
-		counter += 0xFFFF
-		counter &= 0xFFFF
-		self.write_dmem(0xf020, counter & 0xFF)
-		self.write_dmem(0xf021, counter >> 8)
+		counter = struct.unpack("<H", self.read_dmem(0xf022, 2))[0]
+		target = struct.unpack("<H", self.read_dmem(0xf020, 2))[0]
 
-		if counter == 0 and self.running == False: self.running = True
+		counter += 1
+		counter &= 0xffff
+
+		self.write_dmem(0xf022, counter & 0xff)
+		self.write_dmem(0xf023, counter >> 8)
+
+		if counter >= target and self.stop_mode: self.stop_mode = False
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
@@ -820,7 +808,7 @@ class Sim:
 		self.sbycon()
 		self.timer()
 
-		if self.running:
+		if not self.stop_mode:
 			self.ok = False
 			
 			try: self.sim.u8_step()
@@ -828,16 +816,18 @@ class Sim:
 
 			self.ok = True
 
+			if self.ips_ctr % 1000 == 0:
+				cur = time.time()
+				self.ips = 1000 / (cur - self.ips_start)
+				self.ips_start = cur
+
+			self.ips_ctr += 1
+
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
 
 	def print_regs(self):
 		regs = self.sim.core.regs
-
-		cur = time.time()
-		try: self.ips = 1000 / (cur - self.ips_start)
-		except ZeroDivisionError: self.ips = None
-		self.ips_start = cur
 
 		csr = regs.csr
 		pc = regs.pc
@@ -878,7 +868,9 @@ EPSW3           {regs.epsw[2]:02X}
 
 Other information:
 Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
-Instructions per second  {format(self.ips, '.1f') if self.ips is not None else 'None'}
+STOP mode enabled        [{'x' if self.stop_mode else ' '}]
+Instructions ran         {self.ips_ctr}
+Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}
 
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
@@ -963,13 +955,14 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None else '
 		self.screen.blit(self.interface, self.interface_rect)
 		
 		self.draw_text(f'Displaying {"LCD" if self.disp_lcd.get() else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
+
 		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if self.disp_lcd.get() else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
-
+		
 		for i in range(len(screen_data_status_bar)):
 			crop = config.status_bar_crops[i]
 			if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
-
+	
 		for y in range(31):
 			for x in range(96):
 				if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
