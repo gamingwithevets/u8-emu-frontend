@@ -14,7 +14,7 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
-import config_fx570esp as config
+import config#_fx570esp as config
 
 logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
 
