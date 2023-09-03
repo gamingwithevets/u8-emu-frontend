@@ -17,9 +17,7 @@ gcc u8_emu/src/core/*.c -O3 -fPIC -shared -o core.so
 4. Run `python main.py` (or `python3 main.py`) and you're done.
 
 # Usage
-When you open the emulator, you can right-click to see the available functions of the emulator.
-
-To step, press any key (except the keys reserved for other functions). You can also hold down a key to run the emulator at a reasonable speed, though not as fast as when single-step mode is disabled.
+When you open the emulator, you can right-click to see the available functions of the emulator. To step, press the backslash (`\`) key.
 
 # Images
 This emulator uses images extracted from the ES PLUS emulators. To get them, you need to open the emulator EXE (`<model> Emulator.exe`) and DLL (`fxESPLUS_P<num>.dll`) in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker).
