@@ -588,11 +588,11 @@ class Sim:
 		self.root.focus_set()
 		self.root['bg'] = config.console_bg
 
-		self.rom = open(config.rom_file, 'rb').read()
-		self.sim = Core(self.rom)
+		rom = open(config.rom_file, 'rb').read()
+		self.sim = Core(rom)
 
-		self.init_sp = self.rom[0] | self.rom[1] << 8
-		self.init_pc = self.rom[2] | self.rom[3] << 8
+		self.init_sp = rom[0] | rom[1] << 8
+		self.init_pc = rom[2] | rom[3] << 8
 
 		self.keys_pressed = set()
 		self.keys = []
@@ -853,6 +853,7 @@ R8   R9   R10  R11  R12  R13  R14  R15
 
 Control registers:
 CSR:PC          {csr:X}:{pc:04X}H (prev. value: {self.prev_csr_pc})
+Words @ CSR:PC  ''' + ' '.join(format(self.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(3)) + f'''
 Instruction     {self.decode_instruction()}
 SP              {sp:04X}H
 Words @ SP      ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(0, 8, 2)) + f'''
@@ -881,8 +882,8 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
 	def decode_instruction(self):
-		csr_pc = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
-		disas.input_file = self.rom[csr_pc:csr_pc+6]
+		disas.input_file = b''
+		for i in range(3): disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
 		disas.addr = 0
 		ins_str, _, dsr_prefix, _ = disas.decode_ins()
 		if dsr_prefix: ins_str, _, _, _ = disas.decode_ins()
