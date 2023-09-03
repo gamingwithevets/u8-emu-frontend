@@ -14,7 +14,7 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
-import config#_fx570esp as config
+import config_fx570esp as config
 
 logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
 
@@ -145,7 +145,7 @@ class Core:
 
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
-		self.data_mem = (ctypes.c_uint8 * 0x8000)()
+		self.data_mem = (ctypes.c_uint8 * 0x8000)(*open('data.bin', 'rb').read())
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0xF8000, 0x00000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -803,6 +803,7 @@ class Sim:
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
+		regs = self.sim.core.regs
 
 		self.keyboard()
 		self.sbycon()
@@ -822,6 +823,10 @@ class Sim:
 				self.ips_start = cur
 
 			self.ips_ctr += 1
+
+		if (regs.csr << 16) + regs.pc == self.brkpoint:
+			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {regs.csr:X}:{regs.pc:04X}H has been hit!')
+			self.set_single_step(True)
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
