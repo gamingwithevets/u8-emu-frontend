@@ -14,6 +14,7 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
+from pyu8disas import main as disas
 import config#_fx570esp as config
 
 logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
@@ -145,7 +146,7 @@ class Core:
 
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
-		self.data_mem = (ctypes.c_uint8 * 0x8000)(*open('data.bin', 'rb').read())
+		self.data_mem = (ctypes.c_uint8 * 0x8000)()
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0xF8000, 0x00000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -587,11 +588,11 @@ class Sim:
 		self.root.focus_set()
 		self.root['bg'] = config.console_bg
 
-		rom = open(config.rom_file, 'rb').read()
-		self.sim = Core(rom)
+		self.rom = open(config.rom_file, 'rb').read()
+		self.sim = Core(self.rom)
 
-		self.init_sp = rom[0] | rom[1] << 8
-		self.init_pc = rom[2] | rom[3] << 8
+		self.init_sp = self.rom[0] | self.rom[1] << 8
+		self.init_pc = self.rom[2] | self.rom[3] << 8
 
 		self.keys_pressed = set()
 		self.keys = []
@@ -852,7 +853,7 @@ R8   R9   R10  R11  R12  R13  R14  R15
 
 Control registers:
 CSR:PC          {csr:X}:{pc:04X}H (prev. value: {self.prev_csr_pc})
-Words @ CSR:PC  {self.read_cmem(pc, csr):04X} {self.read_cmem(pc + 2, csr):04X} {self.read_cmem(pc + 4, csr):04X}
+Instruction     {self.decode_instruction()}
 SP              {sp:04X}H
 Words @ SP      ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(0, 8, 2)) + f'''
                 ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(8, 16, 2)) + f'''
@@ -878,6 +879,14 @@ Instructions ran         {self.ips_ctr}
 Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}
 
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
+
+	def decode_instruction(self):
+		csr_pc = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
+		disas.input_file = self.rom[csr_pc:csr_pc+6]
+		disas.addr = 0
+		ins_str, _, dsr_prefix, _ = disas.decode_ins()
+		if dsr_prefix: ins_str, _, _, _ = disas.decode_ins()
+		return ins_str
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
 		font = pygame.font.SysFont(font_name, int(size))
