@@ -824,7 +824,7 @@ class Sim:
 
 			self.ips_ctr += 1
 
-		if (regs.csr << 16) + regs.pc == self.brkpoint:
+		if (regs.csr << 16) + regs.pc == self.breakpoint:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {regs.csr:X}:{regs.pc:04X}H has been hit!')
 			self.set_single_step(True)
 
