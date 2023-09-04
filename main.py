@@ -968,19 +968,25 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 
 		self.screen.fill((0, 0, 0))
 		self.screen.blit(self.interface, self.interface_rect)
-		
-		self.draw_text(f'Displaying {"LCD" if self.disp_lcd.get() else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if self.disp_lcd.get() else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
+		disp_lcd = self.disp_lcd.get()
+		self.draw_text(f'Displaying {"LCD" if disp_lcd else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
+
+		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
-		for i in range(len(screen_data_status_bar)):
-			crop = config.status_bar_crops[i]
-			if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+		scr_range = self.read_dmem(0xf030, 1)[0] & 7
+		scr_mode = self.read_dmem(0xf031, 1)[0] & 7
+
+		if scr_mode in (5, 6):
+			for i in range(len(screen_data_status_bar)):
+				crop = config.status_bar_crops[i]
+				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
-		for y in range(31):
-			for x in range(96):
-				if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
+		if scr_mode == 5:
+			for y in range(scr_range if scr_range and disp_lcd else 31):
+				for x in range(96):
+					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44, config.pygame_color, anchor = 'midtop')
