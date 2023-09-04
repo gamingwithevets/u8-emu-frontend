@@ -19,6 +19,9 @@ gcc u8_emu/src/core/*.c -O3 -fPIC -shared -o core.so
 # Usage
 When you open the emulator, you can right-click to see the available functions of the emulator. To step, press the backslash (`\`) key.
 
+To use a custom configuration Python script, run `python main.py <module-name>` (or `python3 main.py <module-name>`).
+`<module-name>` is the name of the Python script in module name form; for example if your configuration file is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
+
 # Images
 This emulator uses images extracted from the ES PLUS emulators. To get them, you need to open the emulator EXE (`<model> Emulator.exe`) and DLL (`fxESPLUS_P<num>.dll`) in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker).
 - For the interface, you need to extract bitmap **3001** from the emulator **DLL**.

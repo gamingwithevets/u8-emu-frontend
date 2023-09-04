@@ -14,11 +14,8 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
+
 from pyu8disas import main as disas
-import config#_fx570esp as config
-
-logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
-
 import platform
 
 if sys.version_info < (3, 6, 0, 'alpha', 4):
@@ -28,6 +25,9 @@ if sys.version_info < (3, 6, 0, 'alpha', 4):
 if pygame.version.vernum < (2, 2, 0):
 	print(f'This program requires at least Pygame 2.2.0. (You are running Pygame {pygame.version.ver})')
 	sys.exit()
+
+exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
+logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
 
 # Thanks Delta / @frsr on Discord!
 class u8_core_t(ctypes.Structure):	# Forward definition so pointers can be used
@@ -978,12 +978,12 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		scr_range = self.read_dmem(0xf030, 1)[0] & 7
 		scr_mode = self.read_dmem(0xf031, 1)[0] & 7
 
-		if scr_mode in (5, 6):
+		if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
 			for i in range(len(screen_data_status_bar)):
 				crop = config.status_bar_crops[i]
 				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
-		if scr_mode == 5:
+		if (disp_lcd and scr_mode == 5) or not disp_lcd:
 			for y in range(scr_range if scr_range and disp_lcd else 31):
 				for x in range(96):
 					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
