@@ -724,12 +724,12 @@ class Sim:
 	def validate_hex(new_char, new_str, act_code, rang = None, spaces = False):
 		act_code = int(act_code)
 		if rang: rang = eval(rang)
-
+		
 		if act_code == 1:
 			try: new_value_int = int(new_char, 16)
 			except ValueError:
 				if new_char == ' ' and not spaces: return False
-			if rang and int(new_str, 16) not in rang: return False
+			if rang and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
 
