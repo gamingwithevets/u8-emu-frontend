@@ -1,5 +1,6 @@
 import os
 import sys
+import math
 import time
 import ctypes
 import pygame
@@ -422,11 +423,11 @@ class Jump(tk.Toplevel):
 		ttk.Label(self, text = 'Input new values for CSR and PC.\n(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, 1, '%S', '%P', '%d')); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, 4, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_csr_pc).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.set_csr_pc())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -456,11 +457,11 @@ class Brkpoint(tk.Toplevel):
 		ttk.Label(self, text = 'Single-step mode will be activated if CSR:PC matches\nthe below. Note that only 1 breakpoint can be set.\n(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, 1, '%S', '%P', '%d')); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, 4, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.set_brkpoint())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -489,24 +490,22 @@ class Write(tk.Toplevel):
 		bold_italic_font.config(weight = 'bold', slant = 'italic')
 
 		self.withdraw()
-		self.geometry('375x175')
+		self.geometry('375x125')
 		self.resizable(False, False)
-		self.title('Write-A-Byte™')
+		self.title('Write to data memory')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = 'Write a byte to data memory, completely FREE OF CHARGE!\n(Totally) Licensed by LAPIS Semiconductor Co., Ltd.', font = bold_italic_font, justify = 'center').pack()
-		ttk.Label(self, text = 'You have null days left before activation is required.\n(please input hex bytes)', justify = 'center').pack()
+		ttk.Label(self, text = '(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'Segment').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, 2, '%S', '%P', '%d')); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'Address').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, 4, '%S', '%P', '%d')); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
 		self.byte = tk.Frame(self); self.byte.pack(fill = 'x')
-		ttk.Label(self.byte, text = 'Byte').pack(side = 'left')
-		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, 2, '%S', '%P', '%d')); self.byte_entry.pack(side = 'right')
-		self.byte_entry.insert(0, '0')
+		ttk.Label(self.byte, text = 'Hex data').pack(side = 'left')
+		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', None, 1)); self.byte_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.write).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.write())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -514,8 +513,20 @@ class Write(tk.Toplevel):
 	def write(self):
 		seg = self.csr_entry.get(); seg = int(seg, 16) if seg else 0
 		adr = self.pc_entry.get(); adr = int(adr, 16) if adr else 0
-		byte = self.byte_entry.get(); byte = int(byte, 16) if byte else 0
-		self.sim.write_dmem(adr, byte, seg)
+		byte = self.byte_entry.get()
+		try: byte = bytes.fromhex(byte) if byte else '\x00'
+		except Exception: 
+			tk.messagebox.showerror('Error', 'Invalid hex string!')
+			return
+		
+		index = 0
+		while index < len(byte):
+			remaining = len(byte) - index
+			if remaining > 8: num = 8
+			else: num = remaining
+			self.sim.write_dmem(adr + index, num, int.from_bytes(byte[index:index+num], 'big'), seg)
+			index += num
+
 		self.sim.print_regs()
 		self.sim.data_mem.get_mem()
 		self.withdraw()
@@ -614,14 +625,14 @@ class Sim:
 					if k is None: self.reset_core(False)
 					elif config.real_kb: self.keys_pressed.add(k)
 					else:
-						self.write_dmem(0x8e01, 1 << k[0])
-						self.write_dmem(0x8e02, 1 << k[1])
+						self.write_dmem(0x8e01, 1, 1 << k[0])
+						self.write_dmem(0x8e02, 1, 1 << k[1])
 
 		def release_cb(event):
 			if config.real_kb: self.keys_pressed.clear()
 			else:
-				self.write_dmem(0x8e01, 0)
-				self.write_dmem(0x8e02, 0)
+				self.write_dmem(0x8e01, 1, 0)
+				self.write_dmem(0x8e02, 1, 0)
 
 		embed_pygame.bind('<KeyPress>', press_cb)
 		embed_pygame.bind('<KeyRelease>', release_cb)
@@ -665,7 +676,7 @@ class Sim:
 
 		extra_funcs = tk.Menu(self.rc_menu, tearoff = 0)
 		extra_funcs.add_command(label = 'Calculate checksum', command = self.calc_checksum)
-		extra_funcs.add_command(label = 'Write-A-Byte™', command = self.write.deiconify)
+		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Quit', accelerator = 'Q', command = self.exit_sim)
@@ -710,18 +721,17 @@ class Sim:
 		self.root.bind(char.upper(), func)
 
 	@staticmethod
-	def validate_hex(max_chars, new_char, new_str, act_code, rang = None):
-		max_chars, act_code = int(max_chars), int(act_code)
+	def validate_hex(new_char, new_str, act_code, rang = None, spaces = False):
+		act_code = int(act_code)
 		if rang: rang = eval(rang)
-
-		if len(new_str) > max_chars: return False
 
 		if act_code == 1:
 			try: new_value_int = int(new_char, 16)
-			except ValueError: return False
-			if rang and len(new_str) == max_chars and int(new_str, 16) not in rang: return False
-			else: return True
-		else: return True
+			except ValueError:
+				if new_char == ' ' and not spaces: return False
+			if rang and int(new_str, 16) not in rang: return False
+
+		return True
 
 	def read_dmem(self, addr, num_bytes, segment = 0):
 		data = b''
@@ -738,7 +748,7 @@ class Sim:
 
 		return data
 
-	def write_dmem(self, addr, byte, segment = 0): self.sim.write_mem_data(segment, addr, 1, byte)
+	def write_dmem(self, addr, num_bytes, data, segment = 0): self.sim.write_mem_data(segment, addr, num_bytes, data)
 
 	def read_cmem(self, addr, segment = 0): return self.sim.read_mem_code(segment, addr, 2)
 
@@ -773,13 +783,13 @@ class Sim:
 			for ki_val, ko_val in self.keys_pressed:
 				if ko & (1 << ko_val): ki &= ~(1 << ki_val)
 
-			self.write_dmem(0xf040, ki)
+			self.write_dmem(0xf040, 1, ki)
 		else:
 			ready = self.read_dmem(0x8e00, 1)[0]
 
 			if not self.last_ready and ready:
-				self.write_dmem(0x8e01, 0)
-				self.write_dmem(0x8e02, 0)
+				self.write_dmem(0x8e01, 1, 0)
+				self.write_dmem(0x8e02, 1, 0)
 			
 			self.last_ready = ready
 
@@ -788,7 +798,7 @@ class Sim:
 
 		if sbycon == 2:
 			self.stop_mode = True
-			self.write_dmem(0xf009, 0)
+			self.write_dmem(0xf009, 1, 0)
 
 	def timer(self):
 		counter = struct.unpack("<H", self.read_dmem(0xf022, 2))[0]
@@ -797,8 +807,8 @@ class Sim:
 		counter += 1
 		counter &= 0xffff
 
-		self.write_dmem(0xf022, counter & 0xff)
-		self.write_dmem(0xf023, counter >> 8)
+		self.write_dmem(0xf022, 1, counter & 0xff)
+		self.write_dmem(0xf023, 1, counter >> 8)
 
 		if counter >= target and self.stop_mode: self.stop_mode = False
 
