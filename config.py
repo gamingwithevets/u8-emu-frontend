@@ -6,8 +6,8 @@ shared_lib = 'core.so'
 # Path to the ROM file.
 rom_file = 'rom.bin'
 
-# Toggle real/emulator keyboard.
-real_kb = False
+# Toggle real/emulator ROM mode.
+real_hardware = False
 
 # Path to the status bar image.
 status_bar_path = 'images/interface_es_bar.png'

@@ -623,13 +623,13 @@ class Sim:
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
 					if k is None: self.reset_core(False)
-					elif config.real_kb: self.keys_pressed.add(k)
+					elif config.real_hardware: self.keys_pressed.add(k)
 					else:
 						self.write_dmem(0x8e01, 1, 1 << k[0])
 						self.write_dmem(0x8e02, 1, 1 << k[1])
 
 		def release_cb(event):
-			if config.real_kb: self.keys_pressed.clear()
+			if config.real_hardware: self.keys_pressed.clear()
 			else:
 				self.write_dmem(0x8e01, 1, 0)
 				self.write_dmem(0x8e02, 1, 0)
@@ -776,7 +776,7 @@ class Sim:
 		finally: self.rc_menu.grab_release()
 
 	def keyboard(self):
-		if config.real_kb:
+		if config.real_hardware:
 			ki = 0xff
 			ko = self.read_dmem(0xf046, 1)[0]
 
@@ -882,13 +882,11 @@ EPSW1           {regs.epsw[0]:02X}
 EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
-
 Other information:
 Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
 STOP mode enabled        [{'x' if self.stop_mode else ' '}]
 Instructions ran         {self.ips_ctr}
-Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}
-
+Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}\
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
 	def decode_instruction(self):
