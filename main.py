@@ -621,7 +621,8 @@ class Sim:
 		def press_cb(event):
 			for k, v in config.keymap.items():
 				p = v[0]
-				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
+				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
+				or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
 					if k is None: self.reset_core(False)
 					elif config.real_hardware: self.keys_pressed.add(k)
 					else:
@@ -629,7 +630,10 @@ class Sim:
 						self.write_dmem(0x8e02, 1, 1 << k[1])
 
 		def release_cb(event):
-			if config.real_hardware: self.keys_pressed.clear()
+			if config.real_hardware: 
+				for k, v in config.keymap.items():
+					if event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:] and k is not None and k in self.keys_pressed: self.keys_pressed.remove(k)
+					elif event.type == tk.EventType.ButtonRelease: self.keys_pressed.clear()
 			else:
 				self.write_dmem(0x8e01, 1, 0)
 				self.write_dmem(0x8e02, 1, 0)
@@ -784,6 +788,7 @@ class Sim:
 				if ko & (1 << ko_val): ki &= ~(1 << ki_val)
 
 			self.write_dmem(0xf040, 1, ki)
+			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
 		else:
 			ready = self.read_dmem(0x8e00, 1)[0]
 
@@ -810,7 +815,9 @@ class Sim:
 		self.write_dmem(0xf022, 1, counter & 0xff)
 		self.write_dmem(0xf023, 1, counter >> 8)
 
-		if counter >= target and self.stop_mode: self.stop_mode = False
+		if counter >= target and self.stop_mode:
+			self.stop_mode = False
+			if config.real_hardware: self.write_dmem(0xf014, 1, 0x20)
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
