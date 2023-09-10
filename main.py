@@ -873,7 +873,7 @@ Instruction     {self.decode_instruction()}
 SP              {sp:04X}H
 Words @ SP      ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(0, 8, 2)) + f'''
                 ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(8, 16, 2)) + f'''
-DSR:EA          {self.sim.core.cur_dsr:02X}:{regs.ea:04X}H
+DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
 
                    C Z S OV MIE HC ELEVEL
 PSW             {psw:02X} {psw_f[0]} {psw_f[1]} {psw_f[2]}  {psw_f[3]}  {psw_f[4]}   {psw_f[5]} {psw_f[6:]} ({int(psw_f[6:], 2)})
