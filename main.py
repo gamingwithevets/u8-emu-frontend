@@ -524,7 +524,7 @@ class Write(tk.Toplevel):
 			remaining = len(byte) - index
 			if remaining > 8: num = 8
 			else: num = remaining
-			self.sim.write_dmem(adr + index, num, int.from_bytes(byte[index:index+num], 'big'), seg)
+			self.sim.write_dmem(adr + index, num, int.from_bytes(byte[index:index+num], 'little'), seg)
 			index += num
 
 		self.sim.print_regs()
