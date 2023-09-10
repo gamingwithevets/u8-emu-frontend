@@ -821,7 +821,6 @@ class Sim:
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
-		regs = self.sim.core.regs
 
 		self.keyboard()
 		self.sbycon()
@@ -829,20 +828,19 @@ class Sim:
 
 		if not self.stop_mode:
 			self.ok = False
-			
-			try: self.sim.u8_step()
-			except OSError as e: logging.error('(exception thrown at runtime)' + str(e)[10:])
-
+			self.sim.u8_step()
+			self.sim.core.regs.csr %= 2 if config.real_hardware else 0x10
 			self.ok = True
 
 			if self.ips_ctr % 1000 == 0:
 				cur = time.time()
-				self.ips = 1000 / (cur - self.ips_start)
+				try: self.ips = 1000 / (cur - self.ips_start)
+				except ZeroDivisionError: self.ips = None
 				self.ips_start = cur
 
 			self.ips_ctr += 1
 
-		if (regs.csr << 16) + regs.pc == self.breakpoint:
+		if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {regs.csr:X}:{regs.pc:04X}H has been hit!')
 			self.set_single_step(True)
 
@@ -875,10 +873,10 @@ Instruction     {self.decode_instruction()}
 SP              {sp:04X}H
 Words @ SP      ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(0, 8, 2)) + f'''
                 ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(8, 16, 2)) + f'''
-DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
+DSR:EA          {self.sim.core.cur_dsr:02X}:{regs.ea:04X}H
 
                    C Z S OV MIE HC ELEVEL
-PSW             {psw:02X} {psw_f[0]} {psw_f[1]} {psw_f[2]}  {psw_f[3]}  {psw_f[4]}   {psw_f[5]} {psw_f[6:]} {int(psw_f[6:], 2)})
+PSW             {psw:02X} {psw_f[0]} {psw_f[1]} {psw_f[2]}  {psw_f[3]}  {psw_f[4]}   {psw_f[5]} {psw_f[6:]} ({int(psw_f[6:], 2)})
 
 LCSR:LR         {regs.lcsr:X}:{regs.lr:04X}H
 ECSR1:ELR1      {regs.ecsr[0]:X}:{regs.elr[0]:04X}H
@@ -892,7 +890,6 @@ EPSW3           {regs.epsw[2]:02X}
 Other information:
 Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
 STOP mode enabled        [{'x' if self.stop_mode else ' '}]
-Instructions ran         {self.ips_ctr}
 Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}\
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
