@@ -15,7 +15,6 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
-
 from pyu8disas import main as disas
 import platform
 
@@ -476,7 +475,7 @@ class Brkpoint(tk.Toplevel):
 		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
 		self.pc_entry.delete(0, 'end')
 
-	def clear_brkpoint():
+	def clear_brkpoint(self):
 		self.sim.breakpoint = None
 		self.sim.print_regs()
 
@@ -705,6 +704,7 @@ class Sim:
 
 		self.prev_csr_pc = None
 		self.last_ready = 0
+		self.stop_accept = [False, False]
 		self.stop_mode = False
 
 		self.ips = 0
@@ -732,7 +732,8 @@ class Sim:
 		if act_code == 1:
 			try: new_value_int = int(new_char, 16)
 			except ValueError:
-				if new_char == ' ' and not spaces: return False
+				if new_char != ' ': return False
+				elif not spaces: return False
 			if rang and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
@@ -801,9 +802,11 @@ class Sim:
 	def sbycon(self):
 		sbycon = self.read_dmem(0xf009, 1)[0]
 
-		if sbycon == 2:
+		if sbycon == 2 and all(self.stop_accept):
 			self.stop_mode = True
 			self.write_dmem(0xf009, 1, 0)
+			self.write_dmem(0xf008, 0, 0)
+			self.stop_accept = [False, False]
 
 	def timer(self):
 		counter = struct.unpack("<H", self.read_dmem(0xf022, 2))[0]
@@ -830,6 +833,12 @@ class Sim:
 			self.ok = False
 			self.sim.u8_step()
 			self.sim.core.regs.csr %= 2 if config.real_hardware else 0x10
+
+			stpacp = self.read_dmem(0xf008, 1)[0]
+			if self.stop_accept[0]:
+				if stpacp & 0xa0 == 0xa0 and not self.stop_accept[1]: self.stop_accept[1] = True
+			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
+
 			self.ok = True
 
 			if self.ips_ctr % 1000 == 0:
@@ -841,7 +850,7 @@ class Sim:
 			self.ips_ctr += 1
 
 		if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint:
-			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {regs.csr:X}:{regs.pc:04X}H has been hit!')
+			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
 			self.set_single_step(True)
 
 	def core_step_loop(self):
@@ -889,7 +898,9 @@ EPSW3           {regs.epsw[2]:02X}
 
 Other information:
 Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
-STOP mode enabled        [{'x' if self.stop_mode else ' '}]
+STOP mode acceptor       Level 1 [{'x' if self.stop_accept[0] else ' '}]
+                         Level 2 [{'x' if self.stop_accept[1] else ' '}]
+STOP mode                [{'x' if self.stop_mode else ' '}]
 Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}\
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
