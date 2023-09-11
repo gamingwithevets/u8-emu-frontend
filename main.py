@@ -67,8 +67,8 @@ class u8_mem_reg_t(ctypes.Structure):
 	_fields_ = [
 		("type",		ctypes.c_uint),
 		("rw",			ctypes.c_bool),
-		("addr_m",		ctypes.c_uint32),
-		("addr_v",		ctypes.c_uint32),
+		("addr_l",		ctypes.c_uint32),
+		("addr_h",		ctypes.c_uint32),
 
 		("acc",			ctypes.c_uint),
 		("_acc_union",	_acc_union)
@@ -146,15 +146,20 @@ class Core:
 
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
-		self.data_mem = (ctypes.c_uint8 * 0x8000)()
+		self.data_mem = (ctypes.c_uint8 * 0xE00)()
+		self.emu_kb = (ctypes.c_uint8 * 0x30)()
+		self.sfr = (ctypes.c_uint8 * 0x1000)()
 
 		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0xF8000, 0x00000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0xF8000, 0x08000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0xF8000, 0x08000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0xF0000, 0x10000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0xF0000, 0x80000, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x00000, 0x07FFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x08000, 0x08E00, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x08000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x10000, 0x1FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 		]
+
+		if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.emu_kb, 0x00000))))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
@@ -831,7 +836,8 @@ class Sim:
 
 		if not self.stop_mode:
 			self.ok = False
-			self.sim.u8_step()
+			try: self.sim.u8_step()
+			except Exception as e: logging.error(str(e))
 			self.sim.core.regs.csr %= 2 if config.real_hardware else 0x10
 
 			stpacp = self.read_dmem(0xf008, 1)[0]
