@@ -152,7 +152,7 @@ class Core:
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x00000, 0x07FFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x08000, 0x08E00, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x08000, 0x08DFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x08000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x10000, 0x1FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
@@ -839,6 +839,7 @@ class Sim:
 			try: self.sim.u8_step()
 			except Exception as e: logging.error(str(e))
 			self.sim.core.regs.csr %= 2 if config.real_hardware else 0x10
+			self.sim.core.regs.pc &= 0xfffe
 
 			stpacp = self.read_dmem(0xf008, 1)[0]
 			if self.stop_accept[0]:
