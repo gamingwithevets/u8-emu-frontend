@@ -133,7 +133,7 @@ sim_lib.read_mem_code.restype = ctypes.c_uint64
 
 sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 sim_lib.write_mem_data.restype = None
-sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes	.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
+sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 sim_lib.write_mem_code.restype = None
 
 ##
