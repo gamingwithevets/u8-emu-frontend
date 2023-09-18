@@ -147,7 +147,7 @@ class Core:
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
 		self.data_mem = (ctypes.c_uint8 * 0xE00)()
-		self.emu_kb = (ctypes.c_uint8 * 0x30)()
+		self.emu_kb = (ctypes.c_uint8 * 0x6200)()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 
 		regions = [
@@ -550,8 +550,13 @@ class DataMem(tk.Toplevel):
 		self.title('Show data memory')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
-		self.segment_var = tk.StringVar(); self.segment_var.set('RAM (00:8000H - 00:8DFFH)')
-		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = ['RAM (00:8000H - 00:8DFFH)', 'SFRs (00:F000H - 00:FFFFH)'])
+		segments = [
+		f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)',
+		'SFRs (00:F000H - 00:FFFFH)',
+		]
+
+		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
+		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
 		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
 		self.segment_cb.pack()
 
@@ -572,12 +577,12 @@ class DataMem(tk.Toplevel):
 		self.deiconify()
 
 	def get_mem(self, keep_yview = True):
-		rang = (0x8000, 0xe00) if self.segment_var.get().split()[0] == 'RAM' else (0xf000, 0x1000)
+		mode = 0 if self.segment_var.get().split()[0] == 'RAM' else 1
 
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
 		self.code_text.delete('1.0', 'end')
-		self.code_text.insert('end', self.format_mem(self.sim.read_dmem(*rang), rang[0]))
+		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem) + (b'' if config.real_hardware else bytes(self.sim.sim.emu_kb)), 0x8000 if not mode else 0xf000))
 		if keep_yview: self.code_text.yview_moveto(str(yview_bak))
 		self.code_text['state'] = 'disabled'
 
