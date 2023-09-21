@@ -582,7 +582,7 @@ class DataMem(tk.Toplevel):
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
 		self.code_text.delete('1.0', 'end')
-		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem) + (b'' if config.real_hardware else bytes(self.sim.sim.emu_kb)), 0x8000 if not mode else 0xf000))
+		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem) + (b'' if config.real_hardware else bytes(self.sim.sim.emu_kb)) if mode == 0 else bytes(self.sim.sim.sfr), 0x8000 if not mode else 0xf000))
 		if keep_yview: self.code_text.yview_moveto(str(yview_bak))
 		self.code_text['state'] = 'disabled'
 
