@@ -940,8 +940,12 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		disas.addr = 0
 		ins_str, _, dsr_prefix, _ = disas.decode_ins()
 		if dsr_prefix:
+			disas.last_dsr_prefix = ins_str
+			last_dsr_prefix_str = f'DW {int.from_bytes(disas.input_file[:2], "little"):04X}'
 			disas.addr += 2
-			ins_str, _, _, _ = disas.decode_ins()
+			ins_str, _, _, used_dsr_prefix = disas.decode_ins()
+			if used_dsr_prefix: return ins_str
+			else: return last_dsr_prefix_str
 		return ins_str
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
