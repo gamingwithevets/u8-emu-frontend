@@ -146,20 +146,35 @@ class Core:
 
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
-		self.data_mem = (ctypes.c_uint8 * 0xE00)()
-		self.emu_kb = (ctypes.c_uint8 * 0x6200)()
+
+		rwin_sizes = {
+		3: 0x7fff,
+		4: 0xcfff,
+		}
+
+		self.data_size = {
+		3: (0x8000, 0x7000),
+		4: (0xd000, 0x2000),
+		}
+
+		self.data_mem = (ctypes.c_uint8 * self.data_size[config.hardware_id][1])()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 
 		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x00000, 0x07FFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x08000, 0x08DFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x08000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x10000, 0x1FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000, rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.data_size[config.hardware_id][0], sum(self.data_size[config.hardware_id]), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
 		]
 
-		if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.emu_kb, 0x00000))))
+		if config.hardware_id == 3: regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, not config.real_hardware, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00e00))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			))
+		elif config.hardware_id == 4: regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+			))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
@@ -551,9 +566,11 @@ class DataMem(tk.Toplevel):
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
 		segments = [
-		f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)',
+		None,
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
+		if config.hardware_id == 3: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
+		elif config.hardware_id == 4: segments[0] = f'RAM (00:D000H - 00:EFFFH)'
 
 		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
@@ -582,7 +599,7 @@ class DataMem(tk.Toplevel):
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
 		self.code_text.delete('1.0', 'end')
-		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem) + (b'' if config.real_hardware else bytes(self.sim.sim.emu_kb)) if mode == 0 else bytes(self.sim.sim.sfr), 0x8000 if not mode else 0xf000))
+		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id == 3 else len(self.sim.sim.data_mem)] if mode == 0 else bytes(self.sim.sim.sfr), self.sim.sim.data_size[config.hardware_id][0] if not mode else 0xf000))
 		if keep_yview: self.code_text.yview_moveto(str(yview_bak))
 		self.code_text['state'] = 'disabled'
 
@@ -865,6 +882,7 @@ class Sim:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
 			self.set_single_step(True)
 
+
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
 
@@ -921,7 +939,9 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		for i in range(3): disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
 		disas.addr = 0
 		ins_str, _, dsr_prefix, _ = disas.decode_ins()
-		if dsr_prefix: ins_str, _, _, _ = disas.decode_ins()
+		if dsr_prefix:
+			disas.addr += 2
+			ins_str, _, _, _ = disas.decode_ins()
 		return ins_str
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
@@ -1007,7 +1027,7 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		disp_lcd = self.disp_lcd.get()
 		self.draw_text(f'Displaying {"LCD" if disp_lcd else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
+		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else (0x87d0 if config.hardware_id == 3 else 0xddd4) + i*0xc, 0xc) for i in range(0x20)]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.read_dmem(0xf030, 1)[0] & 7

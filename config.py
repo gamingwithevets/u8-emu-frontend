@@ -6,6 +6,11 @@ shared_lib = 'core.so'
 # Path to the ROM file.
 rom_file = 'rom.bin'
 
+# Hardware type.
+# 3 = ES/ES PLUS
+# 4 = ClassWiz (First generation - EX/X/CWI)
+hardware_id = 3
+
 # Toggle real/emulator ROM mode.
 real_hardware = False
 
