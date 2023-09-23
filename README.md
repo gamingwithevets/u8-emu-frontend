@@ -23,8 +23,3 @@ To use a custom configuration Python script, run `python main.py <module-name>` 
 `<module-name>` is the name of the Python script in module name form; for example if your configuration file is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
 
 **NOTE**: ClassWiz ROMs currently **do not work**. The frontend has partial support for ClassWiz CWI ROMs, however they **do not work** at the moment.
-
-# Images
-This emulator uses images extracted from the ES PLUS emulators. To get them, you need to open the emulator EXE (`<model> Emulator.exe`) and DLL (`fxESPLUS_P<num>.dll`) in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker).
-- For the interface, you need to extract bitmap **3001** from the emulator **DLL**.
-- For the status bar, you need to extract bitmap **135** from the emulator **EXE**.

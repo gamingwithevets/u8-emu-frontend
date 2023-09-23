@@ -860,7 +860,7 @@ class Sim:
 			self.ok = False
 			try: self.sim.u8_step()
 			except Exception as e: logging.error(str(e))
-			self.sim.core.regs.csr %= 2 if config.real_hardware else 0x10
+			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
 			stpacp = self.read_dmem(0xf008, 1)[0]
@@ -955,30 +955,35 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 	@functools.lru_cache
 	def get_scr_data(*scr_bytes):
 		sbar = scr_bytes[0]
-		screen_data_status_bar = [
-		sbar[0]   & (1 << 4),  # [S]
-		sbar[0]   & (1 << 2),  # [A]
-		sbar[1]   & (1 << 4),  # M
-		sbar[1]   & (1 << 1),  # STO
-		sbar[2]   & (1 << 6),  # RCL
-		sbar[3]   & (1 << 6),  # STAT
-		sbar[4]   & (1 << 7),  # CMPLX
-		sbar[5]   & (1 << 6),  # MAT
-		sbar[5]   & (1 << 1),  # VCT
-		sbar[7]   & (1 << 5),  # [D]
-		sbar[7]   & (1 << 1),  # [R]
-		sbar[8]   & (1 << 4),  # [G]
-		sbar[8]   & (1 << 0),  # FIX
-		sbar[9]   & (1 << 5),  # SCI
-		sbar[0xa] & (1 << 6),  # Math
-		sbar[0xa] & (1 << 3),  # v
-		sbar[0xb] & (1 << 7),  # ^
-		sbar[0xb] & (1 << 4),  # Disp
-		]
 
-		screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
-
-		return screen_data_status_bar, screen_data
+		if config.hardware_id == 3:
+			screen_data_status_bar = [
+			sbar[0]   & (1 << 4),  # [S]
+			sbar[0]   & (1 << 2),  # [A]
+			sbar[1]   & (1 << 4),  # M
+			sbar[1]   & (1 << 1),  # STO
+			sbar[2]   & (1 << 6),  # RCL
+			sbar[3]   & (1 << 6),  # STAT
+			sbar[4]   & (1 << 7),  # CMPLX
+			sbar[5]   & (1 << 6),  # MAT
+			sbar[5]   & (1 << 1),  # VCT
+			sbar[7]   & (1 << 5),  # [D]
+			sbar[7]   & (1 << 1),  # [R]
+			sbar[8]   & (1 << 4),  # [G]
+			sbar[8]   & (1 << 0),  # FIX
+			sbar[9]   & (1 << 5),  # SCI
+			sbar[0xa] & (1 << 6),  # Math
+			sbar[0xa] & (1 << 3),  # v
+			sbar[0xb] & (1 << 7),  # ^
+			sbar[0xb] & (1 << 4),  # Disp
+			]
+			
+			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
+			
+			return screen_data_status_bar, screen_data
+		else:
+			screen_data = [[scr_bytes[i][j] & (1 << k) for j in range(0x18) for k in range(7, -1, -1)] for i in range(64)]
+			return [], screen_data
 
 	def reset_core(self, single_step = True):
 		self.core_reset()
@@ -1027,21 +1032,23 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		disp_lcd = self.disp_lcd.get()
 		self.draw_text(f'Displaying {"LCD" if disp_lcd else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else (0x87d0 if config.hardware_id == 3 else 0xddd4) + i*0xc, 0xc) for i in range(0x20)]
+		if config.hardware_id == 3: scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
+		elif config.hardware_id == 4: scr_bytes = [self.read_dmem(0xf800 + i*0x20 if disp_lcd else 0xddd4 + i*0x18, 0x18) for i in range(0x40)]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.read_dmem(0xf030, 1)[0] & 7
 		scr_mode = self.read_dmem(0xf031, 1)[0] & 7
 
-		if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
-			for i in range(len(screen_data_status_bar)):
-				crop = config.status_bar_crops[i]
-				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+		if config.hardware_id == 3:
+			if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
+				for i in range(len(screen_data_status_bar)):
+					crop = config.status_bar_crops[i]
+					if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
 		if (disp_lcd and scr_mode == 5) or not disp_lcd:
-			for y in range(scr_range if scr_range and disp_lcd else 31):
-				for x in range(96):
-					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
+			for y in range(scr_range if scr_range and disp_lcd and config.hardware_id == 3 else (31 if config.hardware_id == 3 else 64)):
+				for x in range(96 if config.hardware_id == 3 else 192):
+					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + 12 + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44, config.pygame_color, anchor = 'midtop')

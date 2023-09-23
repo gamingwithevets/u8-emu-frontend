@@ -45,6 +45,9 @@ pygame_color = (255, 255, 255)
 screen_tl_w = 58
 screen_tl_h = 132
 
+# Pixel size. Note that decimal pixel sizes do not look correctly.
+pix = 3
+
 # Hex display window size.
 data_mem_width = 700
 data_mem_height = 600
