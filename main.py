@@ -787,8 +787,8 @@ class Sim:
 	def calc_checksum(self):
 		csum = 0	
 		if config.hardware_id == 3:
-			version = self.read_dmem(0xfff4, 6, 1).decode()
-			rev = self.read_dmem(0xfffa, 2, 1).decode()
+			version = self.read_dmem(0xfff4, 6, 1).to_bytes(6, 'little').decode()
+			rev = self.read_dmem(0xfffa, 2, 1).to_bytes(2, 'little').decode()
 			csum1 = self.read_dmem(0xfffc, 2, 1)
 			for i in range(0x10000): csum -= self.read_dmem(i, 1, 8)
 			for i in range(0xfffc): csum -= self.read_dmem(i, 1, 1)
@@ -796,7 +796,7 @@ class Sim:
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
 		elif config.hardware_id == 4:
-			version = self.read_dmem(0xffee, 6, 3).to_bytes(2, 'little').decode()
+			version = self.read_dmem(0xffee, 6, 3).to_bytes(6, 'little').decode()
 			rev = self.read_dmem(0xfff4, 2, 3).to_bytes(2, 'little').decode()
 			csum1 = self.read_dmem(0xfff6, 2, 3)
 			for i in range(0, 0xfc00, 2): csum -= self.read_dmem(i, 2, 5)
