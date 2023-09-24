@@ -714,7 +714,7 @@ class Sim:
 		self.rc_menu.add_separator()
 
 		extra_funcs = tk.Menu(self.rc_menu, tearoff = 0)
-		extra_funcs.add_command(label = 'Calculate checksum', command = self.calc_checksum)
+		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
 		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		self.rc_menu.add_separator()
@@ -797,12 +797,29 @@ class Sim:
 	def read_cmem(self, addr, segment = 0): return self.sim.read_mem_code(segment, addr, 2)
 
 	def calc_checksum(self):
-		csum = 0
-		csum1 = int.from_bytes(self.read_dmem(0xfffc, 2, 1), 'little')
-		for i in range(0x10000): csum -= int.from_bytes(self.read_dmem(i, 1, 8), 'big')
-		for i in range(0xfffc): csum -= int.from_bytes(self.read_dmem(i, 1, 1), 'big')
-		csum %= 0x10000
-		tk.messagebox.showinfo('Checksum', f'Expected checksum: {csum1:04X}\nCalculated checksum: {csum:04X}\n\n{"This looks like a good dump!" if csum == csum1 else "This is either a bad dump or an emulator ROM."}')
+		csum = 0	
+		if config.hardware_id == 3:
+			version = self.read_dmem(0xfff4, 6, 1).decode()
+			rev = self.read_dmem(0xfffa, 2, 1).decode()
+			csum1 = int.from_bytes(self.read_dmem(0xfffc, 2, 1), 'little')
+			for i in range(0x10000): csum -= int.from_bytes(self.read_dmem(i, 1, 8), 'big')
+			for i in range(0xfffc): csum -= int.from_bytes(self.read_dmem(i, 1, 1), 'big')
+			
+			csum %= 0x10000
+			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
+		elif config.hardware_id == 4:
+			version = self.read_dmem(0xffee, 6, 3).decode()
+			rev = self.read_dmem(0xfff4, 2, 3).decode()
+			csum1 = int.from_bytes(self.read_dmem(0xfff6, 2, 3), 'little')
+			for i in range(0, 0xfc00, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 5), 'little')
+			for i in range(0, 0x10000, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 1), 'little')
+			for i in range(0, 0x10000, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 2), 'little')
+			for i in range(0, 0xfff6, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 3), 'little')
+			
+			csum %= 0x10000
+			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
+		
+		tk.messagebox.showinfo('ROM info', text)
 
 	def set_step(self): self.step = True
 
@@ -871,7 +888,7 @@ class Sim:
 		if not self.stop_mode:
 			self.ok = False
 			try: self.sim.u8_step()
-			except Exception as e: logging.error(str(e))
+			except Exception as e: pass
 			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
