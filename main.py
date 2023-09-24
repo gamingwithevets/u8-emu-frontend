@@ -4,7 +4,6 @@ import math
 import time
 import ctypes
 import pygame
-import struct
 import logging
 import functools
 import threading
@@ -779,22 +778,7 @@ class Sim:
 
 		return True
 
-	def read_dmem(self, addr, num_bytes, segment = 0):
-		data = b''
-		bytes_grabbed = 0
-
-		if num_bytes > 8:
-			while bytes_grabbed < num_bytes:
-				remaining = num_bytes - bytes_grabbed
-				if remaining >= 8: grab = 8
-				else: grab = remaining
-
-				dt = self.sim.read_mem_data(segment, addr + bytes_grabbed, grab)
-				data += dt.to_bytes(grab, 'little')
-				bytes_grabbed += grab
-			
-			return data
-		else: return self.sim.read_mem_data(segment, addr, num_bytes).to_bytes(num_bytes, 'little')
+	def read_dmem(self, addr, num_bytes, segment = 0): return self.sim.read_mem_data(segment, addr, num_bytes)
 
 	def write_dmem(self, addr, num_bytes, data, segment = 0): self.sim.write_mem_data(segment, addr, num_bytes, data)
 
@@ -805,20 +789,20 @@ class Sim:
 		if config.hardware_id == 3:
 			version = self.read_dmem(0xfff4, 6, 1).decode()
 			rev = self.read_dmem(0xfffa, 2, 1).decode()
-			csum1 = int.from_bytes(self.read_dmem(0xfffc, 2, 1), 'little')
-			for i in range(0x10000): csum -= int.from_bytes(self.read_dmem(i, 1, 8), 'big')
-			for i in range(0xfffc): csum -= int.from_bytes(self.read_dmem(i, 1, 1), 'big')
+			csum1 = self.read_dmem(0xfffc, 2, 1)
+			for i in range(0x10000): csum -= self.read_dmem(i, 1, 8)
+			for i in range(0xfffc): csum -= self.read_dmem(i, 1, 1)
 			
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
 		elif config.hardware_id == 4:
-			version = self.read_dmem(0xffee, 6, 3).decode()
-			rev = self.read_dmem(0xfff4, 2, 3).decode()
-			csum1 = int.from_bytes(self.read_dmem(0xfff6, 2, 3), 'little')
-			for i in range(0, 0xfc00, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 5), 'little')
-			for i in range(0, 0x10000, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 1), 'little')
-			for i in range(0, 0x10000, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 2), 'little')
-			for i in range(0, 0xfff6, 2): csum -= int.from_bytes(self.read_dmem(i, 2, 3), 'little')
+			version = self.read_dmem(0xffee, 6, 3).to_bytes(2, 'little').decode()
+			rev = self.read_dmem(0xfff4, 2, 3).to_bytes(2, 'little').decode()
+			csum1 = self.read_dmem(0xfff6, 2, 3)
+			for i in range(0, 0xfc00, 2): csum -= self.read_dmem(i, 2, 5)
+			for i in range(0, 0x10000, 2): csum -= self.read_dmem(i, 2, 1)
+			for i in range(0, 0x10000, 2): csum -= self.read_dmem(i, 2, 2)
+			for i in range(0, 0xfff6, 2): csum -= self.read_dmem(i, 2, 3)
 			
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
@@ -843,7 +827,7 @@ class Sim:
 	def keyboard(self):
 		if config.real_hardware:
 			ki = 0xff
-			ko = self.read_dmem(0xf046, 1)[0]
+			ko = self.read_dmem(0xf046, 1)
 
 			for ki_val, ko_val in self.keys_pressed:
 				if ko & (1 << ko_val): ki &= ~(1 << ki_val)
@@ -851,7 +835,7 @@ class Sim:
 			self.write_dmem(0xf040, 1, ki)
 			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
 		else:
-			ready = self.read_dmem(0x8e00, 1, self.emu_kb_seg)[0]
+			ready = self.read_dmem(0x8e00, 1, self.emu_kb_seg)
 
 			if not self.last_ready and ready:
 				self.write_dmem(0x8e01, 1, 0, self.emu_kb_seg)
@@ -860,7 +844,7 @@ class Sim:
 			self.last_ready = ready
 
 	def sbycon(self):
-		sbycon = self.read_dmem(0xf009, 1)[0]
+		sbycon = self.read_dmem(0xf009, 1)
 
 		if sbycon == 2 and all(self.stop_accept):
 			self.stop_mode = True
@@ -869,14 +853,12 @@ class Sim:
 			self.stop_accept = [False, False]
 
 	def timer(self):
-		counter = struct.unpack("<H", self.read_dmem(0xf022, 2))[0]
-		target = struct.unpack("<H", self.read_dmem(0xf020, 2))[0]
+		counter = self.read_dmem(0xf022, 2)
+		target = self.read_dmem(0xf020, 2)
 
-		counter += 1
-		counter &= 0xffff
+		counter = (counter + 1) & 0xffff
 
-		self.write_dmem(0xf022, 1, counter & 0xff)
-		self.write_dmem(0xf023, 1, counter >> 8)
+		self.write_dmem(0xf022, 2, counter)
 
 		if counter >= target and self.stop_mode:
 			self.stop_mode = False
@@ -896,7 +878,7 @@ class Sim:
 			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
-			stpacp = self.read_dmem(0xf008, 1)[0]
+			stpacp = self.read_dmem(0xf008, 1)
 			if self.stop_accept[0]:
 				if stpacp & 0xa0 == 0xa0 and not self.stop_accept[1]: self.stop_accept[1] = True
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
@@ -944,8 +926,8 @@ CSR:PC          {csr:X}:{pc:04X}H (prev. value: {self.prev_csr_pc})
 Words @ CSR:PC  ''' + ' '.join(format(self.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(3)) + f'''
 Instruction     {self.decode_instruction()}
 SP              {sp:04X}H
-Words @ SP      ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(0, 8, 2)) + f'''
-                ''' + ' '.join(format(int.from_bytes(self.read_dmem(sp + i, 2), 'little'), '04X') for i in range(8, 16, 2)) + f'''
+Words @ SP      ''' + ' '.join(format(self.read_dmem(sp + i, 2), '04X') for i in range(0, 8, 2)) + f'''
+                ''' + ' '.join(format(self.read_dmem(sp + i, 2), '04X') for i in range(8, 16, 2)) + f'''
 DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
 
                    C Z S OV MIE HC ELEVEL
@@ -1093,12 +1075,23 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		disp_lcd = self.disp_lcd.get()
 		self.draw_text(f'Displaying {"LCD" if disp_lcd else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		if config.hardware_id == 3: scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
-		elif config.hardware_id == 4: scr_bytes = [self.read_dmem(0xf800 + i*0x20 if disp_lcd else 0xddd4 + i*0x18, 0x18) for i in range(0x40)]
+		if config.hardware_id == 3:
+			scr_bytes = [
+				self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 8).to_bytes(8, 'little') \
+			  + self.read_dmem(0xf800 + i*0x10 + 8 if disp_lcd else 0x87d0 + i*0xc + 8, 4).to_bytes(4, 'little') \
+			    for i in range(0x20)
+			]
+		elif config.hardware_id == 4:
+			scr_bytes = [
+				self.read_dmem(0xf800 + i*0x20 if disp_lcd else 0xddd4 + i*0x18, 8).to_bytes(8, 'little') \
+			  + self.read_dmem(0xf800 + i*0x20 + 8 if disp_lcd else 0xddd4 + i*0x18 + 8, 8).to_bytes(8, 'little') \
+			  + self.read_dmem(0xf800 + i*0x20 + 16 if disp_lcd else 0xddd4 + i*0x18 + 16, 8).to_bytes(8, 'little') \
+			    for i in range(0x40)
+			]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
-		scr_range = self.read_dmem(0xf030, 1)[0] & 7
-		scr_mode = self.read_dmem(0xf031, 1)[0] & 7
+		scr_range = self.read_dmem(0xf030, 1) & 7
+		scr_mode = self.read_dmem(0xf031, 1) & 7
 
 		if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
 			for i in range(len(screen_data_status_bar)):
