@@ -21,5 +21,3 @@ When you open the emulator, you can right-click to see the available functions o
 
 To use a custom configuration Python script, run `python main.py <module-name>` (or `python3 main.py <module-name>`).
 `<module-name>` is the name of the Python script in module name form; for example if your configuration file is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
-
-**NOTE**: ClassWiz ROMs **will work**. However, note that at the moment the status bar is not displayed, however it is still loaded.
