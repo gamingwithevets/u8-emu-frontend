@@ -827,7 +827,7 @@ class Sim:
 	def keyboard(self):
 		if config.real_hardware:
 			ki = 0xff
-			ko = self.read_dmem(0xf046, 1)
+			ko = self.sim.sfr[0x46]
 
 			for ki_val, ko_val in self.keys_pressed:
 				if ko & (1 << ko_val): ki &= ~(1 << ki_val)
@@ -835,7 +835,7 @@ class Sim:
 			self.write_dmem(0xf040, 1, ki)
 			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
 		else:
-			ready = self.read_dmem(0x8e00, 1, self.emu_kb_seg)
+			ready = self.sim.data_mem[0xe00] if config.hardware_id == 3 else self.sim.seg4[0x8e00]
 
 			if not self.last_ready and ready:
 				self.write_dmem(0x8e01, 1, 0, self.emu_kb_seg)
@@ -844,7 +844,7 @@ class Sim:
 			self.last_ready = ready
 
 	def sbycon(self):
-		sbycon = self.read_dmem(0xf009, 1)
+		sbycon = self.sim.sfr[9]
 
 		if sbycon == 2 and all(self.stop_accept):
 			self.stop_mode = True
@@ -853,8 +853,8 @@ class Sim:
 			self.stop_accept = [False, False]
 
 	def timer(self):
-		counter = self.read_dmem(0xf022, 2)
-		target = self.read_dmem(0xf020, 2)
+		counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
+		target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
 
 		counter = (counter + 1) & 0xffff
 
