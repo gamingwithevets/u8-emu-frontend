@@ -159,6 +159,7 @@ class Core:
 
 		self.data_mem = (ctypes.c_uint8 * self.data_size[config.hardware_id][1])()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
+		if config.hardware_id == 4: self.seg4 = (ctypes.c_uint8 * 0x10000)()
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -174,6 +175,7 @@ class Core:
 			))
 		elif config.hardware_id == 4: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.seg4,     0x00000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			))
 
@@ -571,7 +573,9 @@ class DataMem(tk.Toplevel):
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
 		if config.hardware_id == 3: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
-		elif config.hardware_id == 4: segments[0] = f'RAM (00:D000H - 00:EFFFH)'
+		elif config.hardware_id == 4:
+			segments[0] = f'RAM (00:D000H - 00:EFFFH)'
+			segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 
 		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
@@ -595,25 +599,28 @@ class DataMem(tk.Toplevel):
 		self.deiconify()
 
 	def get_mem(self, keep_yview = True):
-		mode = 0 if self.segment_var.get().split()[0] == 'RAM' else 1
+		seg = self.segment_var.get()
+		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id == 3 else len(self.sim.sim.data_mem)], self.sim.sim.data_size[config.hardware_id][0])
+		elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
+		elif seg.startswith('Segment 4'): data = self.format_mem(bytes(self.sim.sim.seg4), 0, 4)
 
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
 		self.code_text.delete('1.0', 'end')
-		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id == 3 else len(self.sim.sim.data_mem)] if mode == 0 else bytes(self.sim.sim.sfr), self.sim.sim.data_size[config.hardware_id][0] if not mode else 0xf000))
+		self.code_text.insert('end', data)
 		if keep_yview: self.code_text.yview_moveto(str(yview_bak))
 		self.code_text['state'] = 'disabled'
 
 	@staticmethod
 	@functools.lru_cache
-	def format_mem(data, addr):
+	def format_mem(data, addr, seg = 0):
 		lines = {}
 		j = addr // 16
 		for i in range(addr, addr + len(data), 16):
 			line = ''
 			line_ascii = ''
 			for byte in data[i-addr:i-addr+16]: line += f'{byte:02X} '; line_ascii += chr(byte) if byte in range(0x20, 0x7f) else '.'
-			lines[j] = f'00:{i % 0x10000:04X}  {line}  {line_ascii}'
+			lines[j] = f'{seg:02X}:{i % 0x10000:04X}  {line}  {line_ascii}'
 			j += 1
 		return '\n'.join(lines.values())
 
@@ -653,8 +660,8 @@ class Sim:
 					if k is None: self.reset_core(False)
 					elif config.real_hardware: self.keys_pressed.add(k)
 					else:
-						self.write_dmem(0x8e01, 1, 1 << k[0])
-						self.write_dmem(0x8e02, 1, 1 << k[1])
+						self.write_dmem(0x8e01, 1, 1 << k[0], self.emu_kb_seg)
+						self.write_dmem(0x8e02, 1, 1 << k[1], self.emu_kb_seg)
 
 		def release_cb(event):
 			if config.real_hardware: 
@@ -662,8 +669,8 @@ class Sim:
 					if event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:] and k is not None and k in self.keys_pressed: self.keys_pressed.remove(k)
 					elif event.type == tk.EventType.ButtonRelease: self.keys_pressed.clear()
 			else:
-				self.write_dmem(0x8e01, 1, 0)
-				self.write_dmem(0x8e02, 1, 0)
+				self.write_dmem(0x8e01, 1, 0, self.emu_kb_seg)
+				self.write_dmem(0x8e02, 1, 0, self.emu_kb_seg)
 
 		embed_pygame.bind('<KeyPress>', press_cb)
 		embed_pygame.bind('<KeyRelease>', release_cb)
@@ -741,6 +748,7 @@ class Sim:
 		self.ips_ctr = 0
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
+		self.emu_kb_seg = 0 if config.hardware_id == 3 else 4
 
 	def run(self):
 		self.reset_core()
@@ -822,11 +830,11 @@ class Sim:
 			self.write_dmem(0xf040, 1, ki)
 			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
 		else:
-			ready = self.read_dmem(0x8e00, 1)[0]
+			ready = self.read_dmem(0x8e00, 1, self.emu_kb_seg)[0]
 
 			if not self.last_ready and ready:
-				self.write_dmem(0x8e01, 1, 0)
-				self.write_dmem(0x8e02, 1, 0)
+				self.write_dmem(0x8e01, 1, 0, self.emu_kb_seg)
+				self.write_dmem(0x8e02, 1, 0, self.emu_kb_seg)
 			
 			self.last_ready = ready
 
