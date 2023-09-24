@@ -14,8 +14,6 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
-import cProfile
-
 from pyu8disas import main as disas
 import platform
 
@@ -898,9 +896,7 @@ class Sim:
 			self.set_single_step(True)
 
 	def core_step_loop(self):
-		with cProfile.Profile() as pr: 
-			while not self.single_step: self.core_step()
-			pr.print_stats()
+		while not self.single_step: self.core_step()
 
 	def print_regs(self):
 		regs = self.sim.core.regs
