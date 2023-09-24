@@ -133,7 +133,7 @@ sim_lib.read_mem_code.restype = ctypes.c_uint64
 
 sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 sim_lib.write_mem_data.restype = None
-sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes	.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
+sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 sim_lib.write_mem_code.restype = None
 
 ##
@@ -146,20 +146,35 @@ class Core:
 
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
-		self.data_mem = (ctypes.c_uint8 * 0xE00)()
-		self.emu_kb = (ctypes.c_uint8 * 0x30)()
+
+		rwin_sizes = {
+		3: 0x7fff,
+		4: 0xcfff,
+		}
+
+		self.data_size = {
+		3: (0x8000, 0x7000),
+		4: (0xd000, 0x2000),
+		}
+
+		self.data_mem = (ctypes.c_uint8 * self.data_size[config.hardware_id][1])()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 
 		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x00000, 0x07FFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x08000, 0x08DFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x08000, 0x0FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x08000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x10000, 0x1FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000, rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.data_size[config.hardware_id][0], sum(self.data_size[config.hardware_id]), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
 		]
 
-		if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.emu_kb, 0x00000))))
+		if config.hardware_id == 3: regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, not config.real_hardware, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00e00))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			))
+		elif config.hardware_id == 4: regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+			))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
@@ -550,8 +565,15 @@ class DataMem(tk.Toplevel):
 		self.title('Show data memory')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
-		self.segment_var = tk.StringVar(); self.segment_var.set('RAM (00:8000H - 00:8DFFH)')
-		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = ['RAM (00:8000H - 00:8DFFH)', 'SFRs (00:F000H - 00:FFFFH)'])
+		segments = [
+		None,
+		'SFRs (00:F000H - 00:FFFFH)',
+		]
+		if config.hardware_id == 3: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
+		elif config.hardware_id == 4: segments[0] = f'RAM (00:D000H - 00:EFFFH)'
+
+		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
+		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
 		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
 		self.segment_cb.pack()
 
@@ -572,12 +594,12 @@ class DataMem(tk.Toplevel):
 		self.deiconify()
 
 	def get_mem(self, keep_yview = True):
-		rang = (0x8000, 0xe00) if self.segment_var.get().split()[0] == 'RAM' else (0xf000, 0x1000)
+		mode = 0 if self.segment_var.get().split()[0] == 'RAM' else 1
 
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
 		self.code_text.delete('1.0', 'end')
-		self.code_text.insert('end', self.format_mem(self.sim.read_dmem(*rang), rang[0]))
+		self.code_text.insert('end', self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id == 3 else len(self.sim.sim.data_mem)] if mode == 0 else bytes(self.sim.sim.sfr), self.sim.sim.data_size[config.hardware_id][0] if not mode else 0xf000))
 		if keep_yview: self.code_text.yview_moveto(str(yview_bak))
 		self.code_text['state'] = 'disabled'
 
@@ -838,7 +860,7 @@ class Sim:
 			self.ok = False
 			try: self.sim.u8_step()
 			except Exception as e: logging.error(str(e))
-			self.sim.core.regs.csr %= 2 if config.real_hardware else 0x10
+			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
 			stpacp = self.read_dmem(0xf008, 1)[0]
@@ -859,6 +881,7 @@ class Sim:
 		if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
 			self.set_single_step(True)
+
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
@@ -916,7 +939,13 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		for i in range(3): disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
 		disas.addr = 0
 		ins_str, _, dsr_prefix, _ = disas.decode_ins()
-		if dsr_prefix: ins_str, _, _, _ = disas.decode_ins()
+		if dsr_prefix:
+			disas.last_dsr_prefix = ins_str
+			last_dsr_prefix_str = f'DW {int.from_bytes(disas.input_file[:2], "little"):04X}'
+			disas.addr += 2
+			ins_str, _, _, used_dsr_prefix = disas.decode_ins()
+			if used_dsr_prefix: return ins_str
+			else: return last_dsr_prefix_str
 		return ins_str
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
@@ -930,30 +959,35 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 	@functools.lru_cache
 	def get_scr_data(*scr_bytes):
 		sbar = scr_bytes[0]
-		screen_data_status_bar = [
-		sbar[0]   & (1 << 4),  # [S]
-		sbar[0]   & (1 << 2),  # [A]
-		sbar[1]   & (1 << 4),  # M
-		sbar[1]   & (1 << 1),  # STO
-		sbar[2]   & (1 << 6),  # RCL
-		sbar[3]   & (1 << 6),  # STAT
-		sbar[4]   & (1 << 7),  # CMPLX
-		sbar[5]   & (1 << 6),  # MAT
-		sbar[5]   & (1 << 1),  # VCT
-		sbar[7]   & (1 << 5),  # [D]
-		sbar[7]   & (1 << 1),  # [R]
-		sbar[8]   & (1 << 4),  # [G]
-		sbar[8]   & (1 << 0),  # FIX
-		sbar[9]   & (1 << 5),  # SCI
-		sbar[0xa] & (1 << 6),  # Math
-		sbar[0xa] & (1 << 3),  # v
-		sbar[0xb] & (1 << 7),  # ^
-		sbar[0xb] & (1 << 4),  # Disp
-		]
 
-		screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
-
-		return screen_data_status_bar, screen_data
+		if config.hardware_id == 3:
+			screen_data_status_bar = [
+			sbar[0]   & (1 << 4),  # [S]
+			sbar[0]   & (1 << 2),  # [A]
+			sbar[1]   & (1 << 4),  # M
+			sbar[1]   & (1 << 1),  # STO
+			sbar[2]   & (1 << 6),  # RCL
+			sbar[3]   & (1 << 6),  # STAT
+			sbar[4]   & (1 << 7),  # CMPLX
+			sbar[5]   & (1 << 6),  # MAT
+			sbar[5]   & (1 << 1),  # VCT
+			sbar[7]   & (1 << 5),  # [D]
+			sbar[7]   & (1 << 1),  # [R]
+			sbar[8]   & (1 << 4),  # [G]
+			sbar[8]   & (1 << 0),  # FIX
+			sbar[9]   & (1 << 5),  # SCI
+			sbar[0xa] & (1 << 6),  # Math
+			sbar[0xa] & (1 << 3),  # v
+			sbar[0xb] & (1 << 7),  # ^
+			sbar[0xb] & (1 << 4),  # Disp
+			]
+			
+			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
+			
+			return screen_data_status_bar, screen_data
+		else:
+			screen_data = [[scr_bytes[i][j] & (1 << k) for j in range(0x18) for k in range(7, -1, -1)] for i in range(64)]
+			return [], screen_data
 
 	def reset_core(self, single_step = True):
 		self.core_reset()
@@ -1002,21 +1036,23 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		disp_lcd = self.disp_lcd.get()
 		self.draw_text(f'Displaying {"LCD" if disp_lcd else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
+		if config.hardware_id == 3: scr_bytes = [self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 0xc) for i in range(0x20)]
+		elif config.hardware_id == 4: scr_bytes = [self.read_dmem(0xf800 + i*0x20 if disp_lcd else 0xddd4 + i*0x18, 0x18) for i in range(0x40)]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.read_dmem(0xf030, 1)[0] & 7
 		scr_mode = self.read_dmem(0xf031, 1)[0] & 7
 
-		if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
-			for i in range(len(screen_data_status_bar)):
-				crop = config.status_bar_crops[i]
-				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+		if config.hardware_id == 3:
+			if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
+				for i in range(len(screen_data_status_bar)):
+					crop = config.status_bar_crops[i]
+					if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
 		if (disp_lcd and scr_mode == 5) or not disp_lcd:
-			for y in range(scr_range if scr_range and disp_lcd else 31):
-				for x in range(96):
-					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*3, config.screen_tl_h + 12 + y*3, 3, 3))
+			for y in range(scr_range if scr_range and disp_lcd and config.hardware_id == 3 else (31 if config.hardware_id == 3 else 64)):
+				for x in range(96 if config.hardware_id == 3 else 192):
+					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + 12 + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44, config.pygame_color, anchor = 'midtop')

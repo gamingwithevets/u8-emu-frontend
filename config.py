@@ -6,6 +6,11 @@ shared_lib = 'core.so'
 # Path to the ROM file.
 rom_file = 'rom.bin'
 
+# Hardware type.
+# 3 = ES/ES PLUS
+# 4 = ClassWiz (First generation - EX/X/CWI)
+hardware_id = 3
+
 # Toggle real/emulator ROM mode.
 real_hardware = False
 
@@ -39,6 +44,9 @@ pygame_color = (255, 255, 255)
 # Top left corner of the screen.
 screen_tl_w = 58
 screen_tl_h = 132
+
+# Pixel size. Note that decimal pixel sizes do not look correctly.
+pix = 3
 
 # Hex display window size.
 data_mem_width = 700
