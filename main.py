@@ -15,6 +15,8 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
+import cProfile
+
 from pyu8disas import main as disas
 import platform
 
@@ -781,16 +783,18 @@ class Sim:
 		data = b''
 		bytes_grabbed = 0
 
-		while bytes_grabbed < num_bytes:
-			remaining = num_bytes - bytes_grabbed
-			if remaining >= 8: grab = 8
-			else: grab = remaining
+		if num_bytes > 8:
+			while bytes_grabbed < num_bytes:
+				remaining = num_bytes - bytes_grabbed
+				if remaining >= 8: grab = 8
+				else: grab = remaining
 
-			dt = self.sim.read_mem_data(segment, addr + bytes_grabbed, grab)
-			data += dt.to_bytes(grab, 'little')
-			bytes_grabbed += grab
-
-		return data
+				dt = self.sim.read_mem_data(segment, addr + bytes_grabbed, grab)
+				data += dt.to_bytes(grab, 'little')
+				bytes_grabbed += grab
+			
+			return data
+		else: return self.sim.read_mem_data(segment, addr, num_bytes).to_bytes(num_bytes, 'little')
 
 	def write_dmem(self, addr, num_bytes, data, segment = 0): self.sim.write_mem_data(segment, addr, num_bytes, data)
 
@@ -911,9 +915,10 @@ class Sim:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
 			self.set_single_step(True)
 
-
 	def core_step_loop(self):
-		while not self.single_step: self.core_step()
+		with cProfile.Profile() as pr: 
+			while not self.single_step: self.core_step()
+			pr.print_stats()
 
 	def print_regs(self):
 		regs = self.sim.core.regs
