@@ -693,7 +693,7 @@ class Sim:
 		self.sbar_hi = self.status_bar.get_height()
 
 		self.show_regs = tk.BooleanVar(value = True)
-		self.disp_lcd = tk.BooleanVar(value = True)
+		self.disp_lcd = tk.IntVar(value = 0)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Enable single-step mode', accelerator = 'S', command = lambda: self.set_single_step(True))
@@ -707,7 +707,17 @@ class Sim:
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_checkbutton(label = 'Show registers outside of single-step', accelerator = 'R', variable = self.show_regs)
-		self.rc_menu.add_checkbutton(label = 'Toggle LCD/buffer display (on: LCD, off: buffer)', accelerator = 'D', variable = self.disp_lcd)
+
+		if config.hardware_id == 3: num_buffers = 1
+		elif config.hardware_id == 4: num_buffers = 2
+
+		display_mode = tk.Menu(self.rc_menu, tearoff = 0)
+		display_mode.add_command(label = 'Press D to switch between display modes', state = 'disabled')
+		display_mode.add_separator()
+		display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
+		for i in range(1, num_buffers + 1): display_mode.add_radiobutton(label = f'Buffer {i}', variable = self.disp_lcd, value = i)
+		self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
+		
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Reset core', accelerator = 'C', command = self.reset_core)
 		self.rc_menu.add_separator()
@@ -727,7 +737,7 @@ class Sim:
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.show_regs.set(not self.show_regs.get()))
-		self.bind_('d', lambda x: self.disp_lcd.set(not self.disp_lcd.get()))
+		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) & num_buffers))
 		self.bind_('c', lambda x: self.reset_core())
 		self.bind_('q', lambda x: self.exit_sim())
 
@@ -748,6 +758,12 @@ class Sim:
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 		self.emu_kb_seg = 0 if config.hardware_id == 3 else 4
+
+		self.screen_stuff = {
+		# hwid: (alloc, used, rows, buffers)
+			3: (0x10, 0xc,  0x20, (0x87d0,)),
+			4: (0x20, 0x18, 0x40, (0xd139, 0xddd4)),
+		}
 
 	def run(self):
 		self.reset_core()
@@ -779,6 +795,24 @@ class Sim:
 	def read_dmem(self, addr, num_bytes, segment = 0): return self.sim.read_mem_data(segment, addr, num_bytes)
 
 	def write_dmem(self, addr, num_bytes, data, segment = 0): self.sim.write_mem_data(segment, addr, num_bytes, data)
+
+	def read_dmem_bytes(self, addr, num_bytes, segment = 0):
+		data = b''
+		bytes_grabbed = 0
+
+		if num_bytes > 8:
+			while bytes_grabbed < num_bytes:
+				remaining = num_bytes - bytes_grabbed
+				if remaining >= 8: grab = 8
+				else: grab = remaining
+
+				dt = self.read_dmem(addr + bytes_grabbed, grab, segment)
+				data += dt.to_bytes(grab, 'little')
+				bytes_grabbed += grab
+			
+			return data
+		else: return self.read_dmem(addr, num_bytes, segment).to_bytes(num_bytes, 'little')
+
 
 	def read_cmem(self, addr, segment = 0): return self.sim.read_mem_code(segment, addr, 2)
 
@@ -1069,33 +1103,22 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		self.screen.blit(self.interface, self.interface_rect)
 
 		disp_lcd = self.disp_lcd.get()
-		self.draw_text(f'Displaying {"LCD" if disp_lcd else "buffer"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
+		self.draw_text(f'Displaying {"buffer "+str(disp_lcd) if disp_lcd else "LCD"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		if config.hardware_id == 3:
-			scr_bytes = [
-				self.read_dmem(0xf800 + i*0x10 if disp_lcd else 0x87d0 + i*0xc, 8).to_bytes(8, 'little') \
-			  + self.read_dmem(0xf800 + i*0x10 + 8 if disp_lcd else 0x87d0 + i*0xc + 8, 4).to_bytes(4, 'little') \
-			    for i in range(0x20)
-			]
-		elif config.hardware_id == 4:
-			scr_bytes = [
-				self.read_dmem(0xf800 + i*0x20 if disp_lcd else 0xddd4 + i*0x18, 8).to_bytes(8, 'little') \
-			  + self.read_dmem(0xf800 + i*0x20 + 8 if disp_lcd else 0xddd4 + i*0x18 + 8, 8).to_bytes(8, 'little') \
-			  + self.read_dmem(0xf800 + i*0x20 + 16 if disp_lcd else 0xddd4 + i*0x18 + 16, 8).to_bytes(8, 'little') \
-			    for i in range(0x40)
-			]
+		scr = self.screen_stuff[config.hardware_id]
+		scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.read_dmem(0xf030, 1) & 7
 		scr_mode = self.read_dmem(0xf031, 1) & 7
 
-		if (disp_lcd and scr_mode in (5, 6)) or not disp_lcd:
+		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
 			for i in range(len(screen_data_status_bar)):
 				crop = config.status_bar_crops[i]
 				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
-		if (disp_lcd and scr_mode == 5) or not disp_lcd:
-			for y in range(self.scr_ranges[scr_range] if disp_lcd and config.hardware_id == 3 else (31 if config.hardware_id == 3 else 63)):
+		if (not disp_lcd and scr_mode == 5) or disp_lcd:
+			for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id == 3 else (31 if config.hardware_id == 3 else 63)):
 				for x in range(96 if config.hardware_id == 3 else 192):
 					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
