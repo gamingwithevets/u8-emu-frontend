@@ -737,7 +737,7 @@ class Sim:
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.show_regs.set(not self.show_regs.get()))
-		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) & num_buffers))
+		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (num_buffers + 1)))
 		self.bind_('c', lambda x: self.reset_core())
 		self.bind_('q', lambda x: self.exit_sim())
 
@@ -762,7 +762,7 @@ class Sim:
 		self.screen_stuff = {
 		# hwid: (alloc, used, rows, buffers)
 			3: (0x10, 0xc,  0x20, (0x87d0,)),
-			4: (0x20, 0x18, 0x40, (0xd139, 0xddd4)),
+			4: (0x20, 0x18, 0x40, (0xddd4, 0xe3d4)),
 		}
 
 	def run(self):
