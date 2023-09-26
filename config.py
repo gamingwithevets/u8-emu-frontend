@@ -7,6 +7,7 @@ shared_lib = 'core.so'
 rom_file = 'rom.bin'
 
 # Hardware type.
+# 0 = fx-82SOLAR II
 # 3 = ES/ES PLUS
 # 4 = ClassWiz (First generation - EX/X/CWI)
 hardware_id = 3

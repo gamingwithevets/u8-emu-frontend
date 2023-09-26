@@ -147,11 +147,13 @@ class Core:
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
 
 		rwin_sizes = {
+		0: 0xdfff,
 		3: 0x7fff,
 		4: 0xcfff,
 		}
 
 		self.data_size = {
+		0: (0xe000, 0x1000),
 		3: (0x8000, 0x7000),
 		4: (0xd000, 0x2000),
 		}
@@ -568,13 +570,11 @@ class DataMem(tk.Toplevel):
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
 		segments = [
-		None,
+		f'RAM (00:{self.sim.sim.data_size[config.hardware_id][0]:04X}H - 00:{sum(self.sim.sim.data_size[config.hardware_id]) - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
 		if config.hardware_id == 3: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
-		elif config.hardware_id == 4:
-			segments[0] = f'RAM (00:D000H - 00:EFFFH)'
-			segments.append('Segment 4 (04:0000H - 04:FFFFH)')
+		elif config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 
 		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
@@ -659,8 +659,8 @@ class Sim:
 					if k is None: self.reset_core(False)
 					elif config.real_hardware: self.keys_pressed.add(k)
 					else:
-						self.write_dmem(0x8e01, 1, 1 << k[0], self.emu_kb_seg)
-						self.write_dmem(0x8e02, 1, 1 << k[1], self.emu_kb_seg)
+						self.write_dmem(self.emu_kb[1]+1, 1, 1 << k[0], self.emu_kb[0])
+						self.write_dmem(self.emu_kb[1]+2, 1, 1 << k[1], self.emu_kb[0])
 
 		def release_cb(event):
 			if config.real_hardware: 
@@ -668,8 +668,8 @@ class Sim:
 					if event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:] and k is not None and k in self.keys_pressed: self.keys_pressed.remove(k)
 					elif event.type == tk.EventType.ButtonRelease: self.keys_pressed.clear()
 			else:
-				self.write_dmem(0x8e01, 1, 0, self.emu_kb_seg)
-				self.write_dmem(0x8e02, 1, 0, self.emu_kb_seg)
+				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
+				self.write_dmem(self.emu_kb[1]+2, 1, 0, self.emu_kb[0])
 
 		embed_pygame.bind('<KeyPress>', press_cb)
 		embed_pygame.bind('<KeyRelease>', release_cb)
@@ -708,15 +708,17 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_checkbutton(label = 'Show registers outside of single-step', accelerator = 'R', variable = self.show_regs)
 
-		if config.hardware_id == 3: num_buffers = 1
-		elif config.hardware_id == 4: num_buffers = 2
+		if config.hardware_id == 3: self.num_buffers = 1
+		elif config.hardware_id == 4: self.num_buffers = 2
+		else: self.num_buffers = 0
 
-		display_mode = tk.Menu(self.rc_menu, tearoff = 0)
-		display_mode.add_command(label = 'Press D to switch between display modes', state = 'disabled')
-		display_mode.add_separator()
-		display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
-		for i in range(1, num_buffers + 1): display_mode.add_radiobutton(label = f'Buffer {i}', variable = self.disp_lcd, value = i)
-		self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
+		if self.num_buffers > 0:
+			display_mode = tk.Menu(self.rc_menu, tearoff = 0)
+			display_mode.add_command(label = 'Press D to switch between display modes', state = 'disabled')
+			display_mode.add_separator()
+			display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
+			for i in range(1, self.num_buffers + 1): display_mode.add_radiobutton(label = f'Buffer {i}', variable = self.disp_lcd, value = i)
+			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
 		
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Reset core', accelerator = 'C', command = self.reset_core)
@@ -757,12 +759,18 @@ class Sim:
 		self.ips_ctr = 0
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
-		self.emu_kb_seg = 0 if config.hardware_id == 3 else 4
+		self.emu_kbs = {
+		0: (0, 0xe800),
+		3: (0, 0x8e00),
+		4: (4, 0x8e00),
+		}
+		self.emu_kb = self.emu_kbs[config.hardware_id]
 
 		self.screen_stuff = {
-		# hwid: (alloc, used, rows, buffers)
-			3: (0x10, 0xc,  0x20, (0x87d0,)),
-			4: (0x20, 0x18, 0x40, (0xddd4, 0xe3d4)),
+		# hwid: (alloc, used, rows, buffers, columns)
+			0: (0x8,  0x8,  4,    None, 0x40),
+			3: (0x10, 0xc,  0x20, (0x87d0,), 96),
+			4: (0x20, 0x18, 0x40, (0xddd4, 0xe3d4), 192),
 		}
 
 	def run(self):
@@ -817,7 +825,7 @@ class Sim:
 	def read_cmem(self, addr, segment = 0): return self.sim.read_mem_code(segment, addr, 2)
 
 	def calc_checksum(self):
-		csum = 0	
+		csum = 0
 		if config.hardware_id == 3:
 			version = self.read_dmem(0xfff4, 6, 1).to_bytes(6, 'little').decode()
 			rev = self.read_dmem(0xfffa, 2, 1).to_bytes(2, 'little').decode()
@@ -838,6 +846,9 @@ class Sim:
 			
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
+		else:
+			tk.messagebox.showinfo('ROM info only supports ES PLUS and CWI.')
+			return
 		
 		tk.messagebox.showinfo('ROM info', text)
 
@@ -867,11 +878,13 @@ class Sim:
 			self.write_dmem(0xf040, 1, ki)
 			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
 		else:
-			ready = self.sim.data_mem[0xe00] if config.hardware_id == 3 else self.sim.seg4[0x8e00]
+			if config.hardware_id == 0: ready = self.sim.data_mem[0x800]
+			elif config.hardware_id == 3: ready = self.sim.data_mem[0xe00]
+			elif config.hardware_id == 4: ready = self.sim.seg4[0x8e00]
 
 			if not self.last_ready and ready:
-				self.write_dmem(0x8e01, 1, 0, self.emu_kb_seg)
-				self.write_dmem(0x8e02, 1, 0, self.emu_kb_seg)
+				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
+				self.write_dmem(self.emu_kb[1]+2, 1, 0, self.emu_kb[0])
 			
 			self.last_ready = ready
 
@@ -1007,30 +1020,24 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		sbar = scr_bytes[0]
 		screen_data_status_bar = screen_data = []
 
-		if config.hardware_id == 3:
+		if config.hardware_id == 0:
 			screen_data_status_bar = [
-			sbar[0]   & (1 << 4),  # [S]
-			sbar[0]   & (1 << 2),  # [A]
-			sbar[1]   & (1 << 4),  # M
-			sbar[1]   & (1 << 1),  # STO
-			sbar[2]   & (1 << 6),  # RCL
-			sbar[3]   & (1 << 6),  # STAT
-			sbar[4]   & (1 << 7),  # CMPLX
-			sbar[5]   & (1 << 6),  # MAT
-			sbar[5]   & (1 << 1),  # VCT
-			sbar[7]   & (1 << 5),  # [D]
-			sbar[7]   & (1 << 1),  # [R]
-			sbar[8]   & (1 << 4),  # [G]
-			sbar[8]   & (1 << 0),  # FIX
-			sbar[9]   & (1 << 5),  # SCI
-			sbar[0xa] & (1 << 6),  # Math
-			sbar[0xa] & (1 << 3),  # ▼
-			sbar[0xb] & (1 << 7),  # ▲
-			sbar[0xb] & (1 << 4),  # Disp
+			scr_bytes[0x11] & (1 << 6),  # SHIFT
+			scr_bytes[0x11] & (1 << 2),  # MODE
+			scr_bytes[0x12] & (1 << 6),  # STO
+			scr_bytes[0x12] & (1 << 2),  # RCL
+			scr_bytes[0x13] & (1 << 6),  # hyp
+			scr_bytes[0x13] & (1 << 2),  # M
+			scr_bytes[0x14] & (1 << 6),  # K
+			scr_bytes[0x14] & (1 << 2),  # DEG
+			scr_bytes[0x15] & (1 << 6),  # RAD
+			scr_bytes[0x15] & (1 << 2),  # GRA
+			scr_bytes[0x16] & (1 << 4),  # FIX
+			scr_bytes[0x16] & (1 << 2),  # SCI
+			scr_bytes[0x16] & (1 << 0),  # SD
 			]
-			
-			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
-			
+
+			screen_data = [[scr_bytes[i*8+j] & (1 << k) for j in range(8) for k in range(7, -1, -1)] for i in range(4)]
 		elif config.hardware_id == 4:
 			screen_data_status_bar = [
 			sbar[0]    & 1,  # [S]
@@ -1054,7 +1061,31 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 			sbar[0x15] & 1,  # ⏸
 			sbar[0x16] & 1,  # ☼
 			]
+
 			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
+		else:
+			screen_data_status_bar = [
+			sbar[0]   & (1 << 4),  # [S]
+			sbar[0]   & (1 << 2),  # [A]
+			sbar[1]   & (1 << 4),  # M
+			sbar[1]   & (1 << 1),  # STO
+			sbar[2]   & (1 << 6),  # RCL
+			sbar[3]   & (1 << 6),  # STAT
+			sbar[4]   & (1 << 7),  # CMPLX
+			sbar[5]   & (1 << 6),  # MAT
+			sbar[5]   & (1 << 1),  # VCT
+			sbar[7]   & (1 << 5),  # [D]
+			sbar[7]   & (1 << 1),  # [R]
+			sbar[8]   & (1 << 4),  # [G]
+			sbar[8]   & (1 << 0),  # FIX
+			sbar[9]   & (1 << 5),  # SCI
+			sbar[0xa] & (1 << 6),  # Math
+			sbar[0xa] & (1 << 3),  # ▼
+			sbar[0xb] & (1 << 7),  # ▲
+			sbar[0xb] & (1 << 4),  # Disp
+			]
+			
+			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
 
 		return screen_data_status_bar, screen_data
 
@@ -1103,10 +1134,12 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		self.screen.blit(self.interface, self.interface_rect)
 
 		disp_lcd = self.disp_lcd.get()
-		self.draw_text(f'Displaying {"buffer "+str(disp_lcd) if disp_lcd else "LCD"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
+		if self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd) if disp_lcd else "LCD"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
 
-		scr = self.screen_stuff[config.hardware_id]
-		scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
+		if config.hardware_id in self.screen_stuff: scr = self.screen_stuff[config.hardware_id]
+		else: scr = self.screen_stuff[3]
+		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
+		else: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
 		screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.read_dmem(0xf030, 1) & 7
@@ -1118,12 +1151,12 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
 		if (not disp_lcd and scr_mode == 5) or disp_lcd:
-			for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id == 3 else (31 if config.hardware_id == 3 else 63)):
-				for x in range(96 if config.hardware_id == 3 else 192):
+			for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id == 3 else scr[2] - 1):
+				for x in range(scr[4]):
 					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
-		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44, config.pygame_color, anchor = 'midtop')
+		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44 if self.num_buffers > 0 else 22, config.pygame_color, anchor = 'midtop')
 
 		pygame.display.update()
 		self.root.update()
