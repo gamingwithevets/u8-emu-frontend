@@ -1045,7 +1045,6 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 				for i in range(2): inner.extend([screen_data_raw[i][j*4+9], screen_data_raw[i][j*4+8], screen_data_raw[i][j*4+10]])
 				inner.extend([screen_data_raw[2][j*4+8]])
 				screen_data_.append(inner)
-			print(screen_data_)
 
 			screen_data = screen_data_raw
 		elif config.hardware_id == 4:
