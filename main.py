@@ -768,7 +768,7 @@ class Sim:
 
 		self.screen_stuff = {
 		# hwid: (alloc, used, rows, buffers, columns)
-			0: (0x8,  0x8,  4,    None, 0x40),
+			0: (0x8,  0x8,  3,    None, 0x40),
 			3: (0x10, 0xc,  0x20, (0x87d0,), 96),
 			4: (0x20, 0x18, 0x40, (0xddd4, 0xe3d4), 192),
 		}
@@ -1037,7 +1037,17 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 			scr_bytes[0x16] & (1 << 0),  # SD
 			]
 
-			screen_data = [[scr_bytes[i*8+j] & (1 << k) for j in range(8) for k in range(7, -1, -1)] for i in range(4)]
+			screen_data_raw = [[scr_bytes[i*8+j] & (1 << k) for j in range(8) for k in range(7, -1, -1)] for i in range(3)]
+			
+			screen_data_ = []
+			for j in range(10):
+				inner = []
+				for i in range(2): inner.extend([screen_data_raw[i][j*4+9], screen_data_raw[i][j*4+8], screen_data_raw[i][j*4+10]])
+				inner.extend([screen_data_raw[2][j*4+8]])
+				screen_data_.append(inner)
+			print(screen_data_)
+
+			screen_data = screen_data_raw
 		elif config.hardware_id == 4:
 			screen_data_status_bar = [
 			sbar[0]    & 1,  # [S]
