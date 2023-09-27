@@ -49,6 +49,9 @@ screen_tl_h = 132
 # Pixel size. Note that decimal pixel sizes do not look correctly.
 pix = 3
 
+# Small pixel size. Only used for fx-82SOLAR II.
+# pix_s = None
+
 # Hex display window size.
 data_mem_width = 700
 data_mem_height = 600
