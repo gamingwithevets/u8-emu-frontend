@@ -1161,17 +1161,20 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
 		if config.hardware_id == 0:
-			for i in range(10):
+			offset = 5
+			small_offset = 3
+			for i in range(12):
 				data = screen_data[i]
-				offset = 3
-				if data[0]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset+1), config.screen_tl_h + self.sbar_hi,                 config.pix*2, config.pix))
-				if data[1]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset),   config.screen_tl_h + self.sbar_hi + config.pix,    config.pix,   config.pix*4))
-				if data[2]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset+3), config.screen_tl_h + self.sbar_hi + config.pix,    config.pix,   config.pix*4))
-				if data[3]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset+1), config.screen_tl_h + self.sbar_hi + config.pix*5,  config.pix*2, config.pix))
-				if data[4]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset),   config.screen_tl_h + self.sbar_hi + config.pix*6,  config.pix,   config.pix*4))
-				if data[5]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset+3), config.screen_tl_h + self.sbar_hi + config.pix*6,  config.pix,   config.pix*4))
-				if data[6]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset+1), config.screen_tl_h + self.sbar_hi + config.pix*10, config.pix*2, config.pix))
-				if data[7]: pygame.draw.circle(self.screen, (0, 0, 0), (config.screen_tl_w + config.pix*(5*i+offset+4.5), config.screen_tl_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
+				n = lambda j: config.pix*(5*i+offset+j) if i < 10 else config.pix*(50+offset) + config.pix_s*(small_offset+5*(i-10)+j)
+				pix = config.pix if i < 10 else config.pix_s
+				if data[0]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + self.sbar_hi,                 pix*2, pix))
+				if data[1]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(0), config.screen_tl_h + self.sbar_hi + pix,    pix,   pix*4))
+				if data[2]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(3), config.screen_tl_h + self.sbar_hi + pix,    pix,   pix*4))
+				if data[3]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + self.sbar_hi + pix*5,  pix*2, pix))
+				if data[4]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(0), config.screen_tl_h + self.sbar_hi + pix*6,  pix,   pix*4))
+				if data[5]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(3), config.screen_tl_h + self.sbar_hi + pix*6,  pix,   pix*4))
+				if data[6]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + self.sbar_hi + pix*10, pix*2, pix))
+				if data[7] and i < 10: pygame.draw.circle(self.screen, (0, 0, 0), (config.screen_tl_w + n(4.5), config.screen_tl_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id == 3 else scr[2] - 1):
