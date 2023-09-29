@@ -739,7 +739,7 @@ class Sim:
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.show_regs.set(not self.show_regs.get()))
-		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (num_buffers + 1)))
+		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
 		self.bind_('c', lambda x: self.reset_core())
 		self.bind_('q', lambda x: self.exit_sim())
 
