@@ -4,7 +4,7 @@
 shared_lib = 'core.so'
 
 # Path to the ROM file.
-rom_file = 'rom.bin'
+rom_file = 'rom_.bin'
 
 # Hardware type.
 # 0 = fx-82SOLAR II
@@ -14,6 +14,10 @@ hardware_id = 3
 
 # Toggle real/emulator ROM mode.
 real_hardware = False
+
+# Pd value. Set on startup. Emulator only.
+# If omitted, Pd value is not set.
+pd_value = 0
 
 # Path to the status bar image.
 status_bar_path = 'images/interface_es_bar.png'
