@@ -148,12 +148,14 @@ class Core:
 
 		rwin_sizes = {
 		0: 0xdfff,
+		2: 0x7fff,
 		3: 0x7fff,
 		4: 0xcfff,
 		}
 
 		self.data_size = {
 		0: (0xe000, 0x1000),
+		2: (0x8000, 0x7000),
 		3: (0x8000, 0x7000),
 		4: (0xd000, 0x2000),
 		}
@@ -763,6 +765,7 @@ class Sim:
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 		self.emu_kbs = {
 		0: (0, 0xe800),
+		2: (0, 0x8e00),
 		3: (0, 0x8e00),
 		4: (4, 0x8e00),
 		}
@@ -771,6 +774,7 @@ class Sim:
 		self.screen_stuff = {
 		# hwid: (alloc, used, rows, buffers, columns)
 			0: (0x8,  0x8,  4,    None, 0x40),
+			2: (0x10, 0xc,  0x20, (0x8600,), 96),
 			3: (0x10, 0xc,  0x20, (0x87d0,), 96),
 			4: (0x20, 0x18, 0x40, (0xddd4, 0xe3d4), 192),
 		}

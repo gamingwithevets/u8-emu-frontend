@@ -8,7 +8,8 @@ rom_file = 'rom_.bin'
 
 # Hardware type.
 # 0 = fx-82SOLAR II
-# 3 = ES/ES PLUS
+# 2 = ES
+# 3 = ES PLUS
 # 4 = ClassWiz (First generation - EX/X/CWI)
 hardware_id = 3
 
