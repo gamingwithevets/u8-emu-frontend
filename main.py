@@ -1162,7 +1162,9 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
 			for i in range(len(screen_data_status_bar)):
 				crop = config.status_bar_crops[i]
-				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+				if screen_data_status_bar[i]:
+					self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+					if i in (7, 8): input(i)
 	
 		if config.hardware_id == 0:
 			offset = 0
