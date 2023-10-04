@@ -151,6 +151,7 @@ class Core:
 		2: 0x7fff,
 		3: 0x7fff,
 		4: 0xcfff,
+		5: 0x8fff,
 		}
 
 		self.data_size = {
@@ -158,13 +159,18 @@ class Core:
 		2: (0x8000, 0x7000),
 		3: (0x8000, 0x7000),
 		4: (0xd000, 0x2000),
+		5: (0x9000, 0x6000),
 		}
 
 		self.data_mem = (ctypes.c_uint8 * self.data_size[config.hardware_id][1])()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 		if not config.real_hardware and hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
 
-		if config.hardware_id == 4: self.seg4 = (ctypes.c_uint8 * 0x10000)()
+		if config.hardware_id == 4: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
+		elif config.hardware_id == 5:
+			self.rw_seg = (ctypes.c_uint8 * 0x10000)()
+			self.seg9 = (ctypes.c_uint8 * 0x10000)()
+			self.seg10 = (ctypes.c_uint8 * 0x10000)()
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -173,15 +179,21 @@ class Core:
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
 		]
 
-		if config.hardware_id == 3: regions.extend((
+		if config.hardware_id == 4: regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			))
+		elif config.hardware_id == 5: regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x90000, 0x9FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.seg9,     0x00000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0xA0000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.seg10,    0x00000))),
+			))
+		else: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, not config.real_hardware, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00e00))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			))
-		elif config.hardware_id == 4: regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.seg4,     0x00000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			))
 
 		self.core.mem.num_regions = len(regions)
@@ -577,8 +589,9 @@ class DataMem(tk.Toplevel):
 		f'RAM (00:{self.sim.sim.data_size[config.hardware_id][0]:04X}H - 00:{sum(self.sim.sim.data_size[config.hardware_id]) - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
-		if config.hardware_id == 3: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
-		elif config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
+		if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
+		elif config.hardware_id == 5: segments.extend(['Segment 8 (08:0000H - 08:FFFFH)', 'Segment 9 (09:0000H - 09:FFFFH)', 'Segment 10 (0A:0000H - 0A:FFFFH)'])
+		else: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
 
 		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
@@ -603,9 +616,11 @@ class DataMem(tk.Toplevel):
 
 	def get_mem(self, keep_yview = True):
 		seg = self.segment_var.get()
-		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id == 3 else len(self.sim.sim.data_mem)], self.sim.sim.data_size[config.hardware_id][0])
+		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.data_size[config.hardware_id][0])
 		elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
-		elif seg.startswith('Segment 4'): data = self.format_mem(bytes(self.sim.sim.seg4), 0, 4)
+		elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
+		elif seg.startswith('Segment 9'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 9)
+		elif seg.startswith('Segment 10'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 10)
 
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
@@ -712,9 +727,16 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_checkbutton(label = 'Show registers outside of single-step', accelerator = 'R', variable = self.show_regs)
 
-		if config.hardware_id == 3: self.num_buffers = 1
-		elif config.hardware_id == 4: self.num_buffers = 2
-		else: self.num_buffers = 0
+		self.screen_stuff = {
+		# hwid: (alloc, used, rows, buffers, columns)
+			0: (0x8,  0x8,  4,    [], 0x40),
+			2: (0x10, 0xc,  0x20, [0x8600], 96),
+			3: (0x10, 0xc,  0x20, [0x87d0], 96),
+			4: (0x20, 0x18, 0x40, [0xddd4, 0xe3d4], 192),
+			5: (0x20, 0x18, 0x40, [0xd654], 192),
+		}
+
+		self.num_buffers = len(self.screen_stuff[config.hardware_id][3])
 
 		if self.num_buffers > 0:
 			display_mode = tk.Menu(self.rc_menu, tearoff = 0)
@@ -768,16 +790,9 @@ class Sim:
 		2: (0, 0x8e00),
 		3: (0, 0x8e00),
 		4: (4, 0x8e00),
+		5: (8, 0x8e00),
 		}
 		self.emu_kb = self.emu_kbs[config.hardware_id]
-
-		self.screen_stuff = {
-		# hwid: (alloc, used, rows, buffers, columns)
-			0: (0x8,  0x8,  4,    None, 0x40),
-			2: (0x10, 0xc,  0x20, (0x8600,), 96),
-			3: (0x10, 0xc,  0x20, (0x87d0,), 96),
-			4: (0x20, 0x18, 0x40, (0xddd4, 0xe3d4), 192),
-		}
 
 	def run(self):
 		self.reset_core()
@@ -832,7 +847,7 @@ class Sim:
 
 	def calc_checksum(self):
 		csum = 0
-		if config.hardware_id == 3:
+		if config.hardware_id in (2, 3):
 			version = self.read_dmem_bytes(0xfff4, 6, 1).decode()
 			rev = self.read_dmem_bytes(0xfffa, 2, 1).decode()
 			csum1 = self.read_dmem(0xfffc, 2, 1)
@@ -885,8 +900,8 @@ class Sim:
 			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
 		else:
 			if config.hardware_id == 0: ready = self.sim.data_mem[0x800]
-			elif config.hardware_id == 3: ready = self.sim.data_mem[0xe00]
-			elif config.hardware_id == 4: ready = self.sim.seg4[0x8e00]
+			elif config.hardware_id in (4, 5): ready = self.sim.rw_seg[0x8e00]
+			else: ready = self.sim.data_mem[0xe00]
 
 			if not self.last_ready and ready:
 				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
@@ -926,7 +941,7 @@ class Sim:
 			self.ok = False
 			try: self.sim.u8_step()
 			except Exception as e: pass
-			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
+			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id in (2, 3) else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
 			stpacp = self.read_dmem(0xf008, 1)
@@ -1081,6 +1096,33 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 			]
 
 			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
+
+		elif config.hardware_id == 5:
+			screen_data_status_bar = [
+			sbar[0]    & 1,  # [S]
+			sbar[1]    & 1,  # [A]
+			sbar[2]    & 1,  # M
+			sbar[3]    & 1,  # ->[x]
+			sbar[5]    & 1,  # √[]/
+			sbar[6]    & 1,  # [D]
+			sbar[7]    & 1,  # [R]
+			sbar[8]    & 1,  # [G]
+			sbar[9]    & 1,  # FIX
+			sbar[0xa]  & 1,  # SCI
+			sbar[0xb]  & 1,  # 𝐄
+			sbar[0xc]  & 1,  # 𝒊
+			sbar[0xd]  & 1,  # ∠
+			sbar[0xe]  & 1,  # ⇩
+			sbar[0xf]  & 1,  # ◀
+			sbar[0x11] & 1,  # ▼
+			sbar[0x12] & 1,  # ▲
+			sbar[0x13] & 1,  # ▶
+			sbar[0x15] & 1,  # ⏸
+			sbar[0x16] & 1,  # ☼
+			]
+
+			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
+
 		else:
 			screen_data_status_bar = [
 			sbar[0]   & (1 << 4),  # [S]
@@ -1193,7 +1235,7 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 					if data[7] and i < 11: pygame.draw.circle(self.screen, (0, 0, 0), (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
-				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id == 3 else scr[2] - 1):
+				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
 					for x in range(scr[4]):
 						if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 

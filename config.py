@@ -11,6 +11,7 @@ rom_file = 'rom_.bin'
 # 2 = ES
 # 3 = ES PLUS
 # 4 = ClassWiz (First generation - EX/X/CWI)
+# 5 = ClassWiz (Second generation - CW/CWII)
 hardware_id = 3
 
 # Toggle real/emulator ROM mode.
