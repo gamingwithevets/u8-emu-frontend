@@ -1217,9 +1217,7 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
 			for i in range(len(screen_data_status_bar)):
 				crop = config.status_bar_crops[i]
-				if screen_data_status_bar[i]:
-					self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
-					if i in (7, 8): input(i)
+				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
 		if config.hardware_id == 0:
 			offset = 0
@@ -1245,12 +1243,12 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		elif config.hardware_id == 5:
 			for y in range(scr[2] - 1):
 				for x in range(scr[4]):
-					if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
+					if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
 					for x in range(scr[4]):
-						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors(screen_data[y][x]), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
+						if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44 if self.num_buffers > 0 else 22, config.pygame_color, anchor = 'midtop')
