@@ -927,6 +927,7 @@ class Sim:
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
+		prev_dsr = self.sim.core.regs.dsr
 
 		self.keyboard()
 		self.sbycon()
