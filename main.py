@@ -733,7 +733,7 @@ class Sim:
 			2: (0x10, 0xc,  0x20, [0x8600], 96),
 			3: (0x10, 0xc,  0x20, [0x87d0], 96),
 			4: (0x20, 0x18, 0x40, [0xddd4, 0xe3d4], 192),
-			5: (0x20, 0x18, 0x40, [0xd654], 192),
+			5: (0x20, 0x18, 0x40, [0xca54, 0xd654], 192),
 		}
 
 		# first item can be anything
@@ -746,7 +746,7 @@ class Sim:
 			display_mode.add_command(label = 'Press D to switch between display modes', state = 'disabled')
 			display_mode.add_separator()
 			display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
-			for i in range(1, self.num_buffers + 1): display_mode.add_radiobutton(label = f'Buffer {i}', variable = self.disp_lcd, value = i)
+			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ 00:{self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
 		
 		self.rc_menu.add_separator()
@@ -1151,7 +1151,7 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		sbar[0x16] & 1,  # ☼
 		]
 
-		screen_data = [[(1 if scr_bytes_hi[1+i][j] & (1 << k) > 0 else 0)*2 + (1 if scr_bytes_lo[1+i][j] & (1 << k) else 0) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
+		screen_data = [[(2 if scr_bytes_hi[1+i][j] & (1 << k) > 0 else 0) + (1 if scr_bytes_lo[1+i][j] & (1 << k) else 0) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
 
 		return screen_data_status_bar, screen_data
 
@@ -1199,15 +1199,17 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		self.screen.fill((0, 0, 0))
 		self.screen.blit(self.interface, self.interface_rect)
 
-		disp_lcd = self.disp_lcd.get()
-		if self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd) if disp_lcd else "LCD"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
-
 		if config.hardware_id in self.screen_stuff: scr = self.screen_stuff[config.hardware_id]
 		else: scr = self.screen_stuff[3]
+
+		disp_lcd = self.disp_lcd.get()
+		if self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ 00:"+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
+
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
 		else: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
 		if config.hardware_id == 5:
-			scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*scr[0], scr[1], 8) for i in range(scr[2]))
+			if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(scr[3][disp_lcd-1] + scr[1]*scr[2] + i*scr[1], scr[1]) for i in range(scr[2]))
+			else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*scr[0], scr[1], 8) for i in range(scr[2]))
 			screen_data_status_bar, screen_data = self.get_scr_data_cwii(scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
 		else: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		

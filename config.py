@@ -4,7 +4,7 @@
 shared_lib = 'core.so'
 
 # Path to the ROM file.
-rom_file = 'rom_.bin'
+rom_file = 'rom.bin'
 
 # Hardware type.
 # 0 = fx-82SOLAR II
