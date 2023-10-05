@@ -166,11 +166,7 @@ class Core:
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 		if not config.real_hardware and hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
 
-		if config.hardware_id == 4: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
-		elif config.hardware_id == 5:
-			self.rw_seg = (ctypes.c_uint8 * 0x10000)()
-			self.seg9 = (ctypes.c_uint8 * 0x10000)()
-			self.seg10 = (ctypes.c_uint8 * 0x10000)()
+		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -187,8 +183,6 @@ class Core:
 		elif config.hardware_id == 5: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x90000, 0x9FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.seg9,     0x00000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0xA0000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.seg10,    0x00000))),
 			))
 		else: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, not config.real_hardware, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00e00))),
@@ -590,7 +584,7 @@ class DataMem(tk.Toplevel):
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
 		if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
-		elif config.hardware_id == 5: segments.extend(['Segment 8 (08:0000H - 08:FFFFH)', 'Segment 9 (09:0000H - 09:FFFFH)', 'Segment 10 (0A:0000H - 0A:FFFFH)'])
+		elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
 		else: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
 
 		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
@@ -619,8 +613,6 @@ class DataMem(tk.Toplevel):
 		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.data_size[config.hardware_id][0])
 		elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
 		elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
-		elif seg.startswith('Segment 9'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 9)
-		elif seg.startswith('Segment 10'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 10)
 
 		self.code_text['state'] = 'normal'
 		yview_bak = self.code_text.yview()[0]
