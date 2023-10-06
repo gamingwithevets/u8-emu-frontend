@@ -914,16 +914,17 @@ class Sim:
 			self.stop_accept = [False, False]
 
 	def timer(self):
-		counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
-		target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
+		if self.sim.sfr[0x25] & 1:
+			counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
+			target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
 
-		counter = (counter + 1) & 0xffff
+			counter = (counter + 1) & 0xffff
 
-		self.write_dmem(0xf022, 2, counter)
+			self.write_dmem(0xf022, 2, counter)
 
-		if counter >= target and self.stop_mode:
-			self.stop_mode = False
-			if config.real_hardware: self.write_dmem(0xf014, 1, 0x20)
+			if counter >= target and self.stop_mode:
+				self.stop_mode = False
+				if config.real_hardware: self.write_dmem(0xf014, 1, 0x20)
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
