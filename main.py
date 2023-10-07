@@ -585,10 +585,10 @@ class DataMem(tk.Toplevel):
 		]
 		if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 		elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
-		else: segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
+		elif config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
 
 		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
-		self.segment_cb = ttk.Combobox(self, width = 30, textvariable = self.segment_var, values = segments)
+		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments)
 		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
 		self.segment_cb.pack()
 
