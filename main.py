@@ -886,13 +886,17 @@ class Sim:
 	def keyboard(self):
 		if config.real_hardware:
 			ki = 0xff
+			ki_filter = self.sim.sfr[0x42]
 			ko = self.sim.sfr[0x46]
 
 			for ki_val, ko_val in self.keys_pressed:
-				if ko & (1 << ko_val): ki &= ~(1 << ki_val)
+				if ko & (1 << ko_val):
+					ki &= ~(1 << ki_val)
+					if ki_filter & (1 << ki_val): self.stop_mode = False
 
-			self.write_dmem(0xf040, 1, ki)
-			if len(self.keys_pressed) > 0: self.write_dmem(0xf014, 1, 2)
+			self.sim.sfr[0x40] = ki
+			if len(self.keys_pressed) > 0: self.sim.sfr[0x14] = 2
+		
 		else:
 			if config.hardware_id == 0: ready = self.sim.data_mem[0x800]
 			elif config.hardware_id in (4, 5): ready = self.sim.rw_seg[0x8e00]
@@ -910,7 +914,7 @@ class Sim:
 		if sbycon == 2 and all(self.stop_accept):
 			self.stop_mode = True
 			self.write_dmem(0xf009, 1, 0)
-			self.write_dmem(0xf008, 0, 0)
+			self.write_dmem(0xf008, 1, 0)
 			self.stop_accept = [False, False]
 
 	def timer(self):
@@ -920,11 +924,12 @@ class Sim:
 
 			counter = (counter + 1) & 0xffff
 
-			self.write_dmem(0xf022, 2, counter)
+			self.sim.sfr[0x22] = counter & 0xff
+			self.sim.sfr[0x23] = counter >> 8
 
 			if counter >= target and self.stop_mode:
 				self.stop_mode = False
-				if config.real_hardware: self.write_dmem(0xf014, 1, 0x20)
+				if config.real_hardware: self.sim.sfr[0x14] = 0x20
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
@@ -941,7 +946,7 @@ class Sim:
 			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id in (2, 3) else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
-			stpacp = self.read_dmem(0xf008, 1)
+			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
 				if stpacp & 0xa0 == 0xa0 and not self.stop_accept[1]: self.stop_accept[1] = True
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
