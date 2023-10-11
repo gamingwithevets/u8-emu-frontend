@@ -156,8 +156,7 @@ class Core:
 
 		self.data_size = {
 		0: (0xe000, 0x1000),
-		2: (0x8000, 0x7000),
-		3: (0x8000, 0x7000),
+		3: (0x8000, 0xe00 if config.real_hardware else 0x7000),
 		4: (0xd000, 0x2000),
 		5: (0x9000, 0x6000),
 		}
@@ -185,7 +184,6 @@ class Core:
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
 			))
 		else: regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, not config.real_hardware, 0x08E00, 0x0EFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00e00))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			))
