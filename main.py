@@ -810,7 +810,7 @@ class Sim:
 			except ValueError:
 				if new_char != ' ': return False
 				elif not spaces: return False
-			if rang and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
+			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
 
