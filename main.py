@@ -546,9 +546,11 @@ class Write(tk.Toplevel):
 		adr = self.pc_entry.get(); adr = int(adr, 16) if adr else 0
 		byte = self.byte_entry.get()
 		try: byte = bytes.fromhex(byte) if byte else '\x00'
-		except Exception: 
-			tk.messagebox.showerror('Error', 'Invalid hex string!')
-			return
+		except Exception:
+			try: byte = byte = bytes.fromhex('0' + byte) if byte else '\x00'
+			except Exception:
+				tk.messagebox.showerror('Error', 'Invalid hex string!')
+				return
 		
 		index = 0
 		while index < len(byte):
@@ -808,8 +810,12 @@ class Sim:
 		if act_code == 1:
 			try: new_value_int = int(new_char, 16)
 			except ValueError:
-				if new_char != ' ': return False
-				elif not spaces: return False
+				if len(new_char) == 1:
+					if new_char != ' ': return False
+					elif not spaces: return False
+				else:
+					try: new_value_int = int(new_char.replace(' ', ''), 16)
+					except ValueError: return False
 			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
@@ -933,10 +939,6 @@ class Sim:
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
 		prev_dsr = self.sim.core.regs.dsr
 
-		self.keyboard()
-		self.sbycon()
-		self.timer()
-
 		if not self.stop_mode:
 			self.ok = False
 			try: self.sim.u8_step()
@@ -958,6 +960,10 @@ class Sim:
 				self.ips_start = cur
 
 			self.ips_ctr += 1
+		
+		self.keyboard()
+		self.sbycon()
+		self.timer()
 
 		if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
