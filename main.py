@@ -154,14 +154,16 @@ class Core:
 		5: 0x8fff,
 		}
 
-		self.data_size = {
+		data_size = {
 		0: (0xe000, 0x1000),
 		3: (0x8000, 0xe00 if config.real_hardware else 0x7000),
 		4: (0xd000, 0x2000),
 		5: (0x9000, 0x6000),
 		}
 
-		self.data_mem = (ctypes.c_uint8 * self.data_size[config.hardware_id][1])()
+		self.sdata = data_size[config.hardware_id if config.hardware_id in data_size else 3]
+
+		self.data_mem = (ctypes.c_uint8 * self.sdata[1])()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 		if not config.real_hardware and hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
 
@@ -170,7 +172,7 @@ class Core:
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000, rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.data_size[config.hardware_id][0], sum(self.data_size[config.hardware_id]), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
 		]
 
@@ -580,7 +582,7 @@ class DataMem(tk.Toplevel):
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
 		segments = [
-		f'RAM (00:{self.sim.sim.data_size[config.hardware_id][0]:04X}H - 00:{sum(self.sim.sim.data_size[config.hardware_id]) - 1:04X}H)',
+		f'RAM (00:{self.sim.sim.sdata[0]:04X}H - 00:{sum(self.sim.sim.sdata) - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
 		if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
@@ -610,7 +612,7 @@ class DataMem(tk.Toplevel):
 
 	def get_mem(self, keep_yview = True):
 		seg = self.segment_var.get()
-		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.data_size[config.hardware_id][0])
+		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
 		elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
 		elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
 
