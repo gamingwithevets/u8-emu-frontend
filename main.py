@@ -666,6 +666,8 @@ class Sim:
 
 		self.use_kb_sfrs = config.real_hardware
 
+		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
+
 		def press_cb(event):
 			for k, v in config.keymap.items():
 				p = v[0]
@@ -901,12 +903,14 @@ class Sim:
 				self.sim.sfr[0x14] = 2
 				
 				ki_filter = self.sim.sfr[0x42]
-				ko = self.sim.sfr[0x46]
+				ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
 
-				for ki_val, ko_val in self.keys_pressed:
-					if ko & (1 << ko_val):
-						ki &= ~(1 << ki_val)
-						if ki_filter & (1 << ki_val): self.stop_mode = False
+				try:
+					for ki_val, ko_val in self.keys_pressed:
+						if ko & (1 << ko_val):
+							ki &= ~(1 << ki_val)
+							if ki_filter & (1 << ki_val): self.stop_mode = False
+				except RuntimeError: pass
 
 			self.sim.sfr[0x40] = ki
 

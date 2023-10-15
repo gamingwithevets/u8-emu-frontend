@@ -17,6 +17,11 @@ hardware_id = 3
 # Toggle real/emulator ROM mode.
 real_hardware = False
 
+# KO mode. If omitted or has an invalid value, 0 will be used.
+# 0 = Use F046H for KO
+# 1 = Use F044H for KO (inverted)
+ko_mode = 0
+
 # Pd value. Set on startup. Emulator only.
 # If omitted, Pd value is not set.
 pd_value = 0
