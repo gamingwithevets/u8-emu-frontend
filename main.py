@@ -664,23 +664,23 @@ class Sim:
 		embed_pygame.pack(side = 'left')
 		embed_pygame.focus_set()
 
+		self.use_kb_sfrs = config.real_hardware
+
 		def press_cb(event):
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
 				or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
 					if k is None: self.reset_core(False)
-					elif config.real_hardware: self.keys_pressed.add(k)
 					else:
-						self.write_dmem(self.emu_kb[1]+1, 1, 1 << k[0], self.emu_kb[0])
-						self.write_dmem(self.emu_kb[1]+2, 1, 1 << k[1], self.emu_kb[0])
+						if self.use_kb_sfrs: self.keys_pressed.add(k)
+						if not config.real_hardware:
+							self.write_dmem(self.emu_kb[1]+1, 1, 1 << k[0], self.emu_kb[0])
+							self.write_dmem(self.emu_kb[1]+2, 1, 1 << k[1], self.emu_kb[0])
 
 		def release_cb(event):
-			if config.real_hardware: 
-				for k, v in config.keymap.items():
-					if event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:] and k is not None and k in self.keys_pressed: self.keys_pressed.remove(k)
-					elif event.type == tk.EventType.ButtonRelease: self.keys_pressed.clear()
-			else:
+			if self.use_kb_sfrs: self.keys_pressed.clear()
+			if not config.real_hardware:
 				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
 				self.write_dmem(self.emu_kb[1]+2, 1, 0, self.emu_kb[0])
 
@@ -707,6 +707,7 @@ class Sim:
 
 		self.show_regs = tk.BooleanVar(value = True)
 		self.disp_lcd = tk.IntVar(value = 0)
+		self.use_kb_sfrs_tk = tk.BooleanVar(value = self.use_kb_sfrs)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Enable single-step mode', accelerator = 'S', command = lambda: self.set_single_step(True))
@@ -743,6 +744,8 @@ class Sim:
 			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ 00:{self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
 		
+		if not config.real_hardware: self.rc_menu.add_checkbutton(label = 'Use keyboard SFRs', variable = self.use_kb_sfrs_tk, command = self.set_use_kb_sfrs)
+
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Reset core', accelerator = 'C', command = self.reset_core)
 		self.rc_menu.add_separator()
@@ -790,6 +793,8 @@ class Sim:
 		5: (8, 0x8e00),
 		}
 		self.emu_kb = self.emu_kbs[config.hardware_id]
+
+	def set_use_kb_sfrs(self): self.use_kb_sfrs = self.use_kb_sfrs_tk.get()
 
 	def run(self):
 		self.reset_core()
@@ -890,20 +895,22 @@ class Sim:
 		finally: self.rc_menu.grab_release()
 
 	def keyboard(self):
-		if config.real_hardware:
+		if self.use_kb_sfrs:
 			ki = 0xff
-			ki_filter = self.sim.sfr[0x42]
-			ko = self.sim.sfr[0x46]
+			if len(self.keys_pressed) > 0:
+				self.sim.sfr[0x14] = 2
+				
+				ki_filter = self.sim.sfr[0x42]
+				ko = self.sim.sfr[0x46]
 
-			for ki_val, ko_val in self.keys_pressed:
-				if ko & (1 << ko_val):
-					ki &= ~(1 << ki_val)
-					if ki_filter & (1 << ki_val): self.stop_mode = False
+				for ki_val, ko_val in self.keys_pressed:
+					if ko & (1 << ko_val):
+						ki &= ~(1 << ki_val)
+						if ki_filter & (1 << ki_val): self.stop_mode = False
 
 			self.sim.sfr[0x40] = ki
-			if len(self.keys_pressed) > 0: self.sim.sfr[0x14] = 2
-		
-		else:
+
+		if not config.real_hardware:
 			if config.hardware_id == 0: ready = self.sim.data_mem[0x800]
 			elif config.hardware_id in (4, 5): ready = self.sim.rw_seg[0x8e00]
 			else: ready = self.sim.data_mem[0xe00]
