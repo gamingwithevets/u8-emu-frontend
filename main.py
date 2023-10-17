@@ -468,6 +468,8 @@ class Jump(tk.Toplevel):
 	def set_csr_pc(self):
 		csr_entry = self.csr_entry.get()
 		pc_entry = self.pc_entry.get()
+		if csr_entry == '' or pc_entry == '': return
+
 		self.sim.sim.core.regs.csr = int(csr_entry, 16) if csr_entry else 0
 		self.sim.sim.core.regs.pc = int(pc_entry, 16) if pc_entry else 0
 		self.sim.print_regs()
@@ -502,6 +504,7 @@ class Brkpoint(tk.Toplevel):
 	def set_brkpoint(self):
 		csr_entry = self.csr_entry.get()
 		pc_entry = self.pc_entry.get()
+		if csr_entry == '' or pc_entry == '': return
 		self.sim.breakpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
 		self.sim.print_regs()
 		self.withdraw()
@@ -547,6 +550,7 @@ class Write(tk.Toplevel):
 		seg = self.csr_entry.get(); seg = int(seg, 16) if seg else 0
 		adr = self.pc_entry.get(); adr = int(adr, 16) if adr else 0
 		byte = self.byte_entry.get()
+		if seg == '' or adr == '' or byte == '': return
 		try: byte = bytes.fromhex(byte) if byte else '\x00'
 		except Exception:
 			try: byte = byte = bytes.fromhex('0' + byte) if byte else '\x00'
