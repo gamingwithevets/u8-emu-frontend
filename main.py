@@ -934,8 +934,10 @@ class Sim:
 
 		if sbycon == 2 and all(self.stop_accept):
 			self.stop_mode = True
-			self.write_dmem(0xf009, 1, 0)
-			self.write_dmem(0xf008, 1, 0)
+			self.sim.sfr[8] = 0
+			self.sim.sfr[9] = 0
+			self.sim.sfr[0x22] = 0
+			self.sim.sfr[0x23] = 0
 			self.stop_accept = [False, False]
 
 	def timer(self):
@@ -948,7 +950,7 @@ class Sim:
 			self.sim.sfr[0x22] = counter & 0xff
 			self.sim.sfr[0x23] = counter >> 8
 
-			if counter >= target and self.stop_mode:
+			if counter == target and self.stop_mode:
 				self.stop_mode = False
 				if config.real_hardware: self.sim.sfr[0x14] = 0x20
 
@@ -980,7 +982,7 @@ class Sim:
 		
 		self.keyboard()
 		self.sbycon()
-		self.timer()
+		if self.stop_mode: self.timer()
 
 		if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint:
 			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
