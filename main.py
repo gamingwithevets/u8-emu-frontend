@@ -14,7 +14,7 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
-from pyu8disas import main as disas
+from pyu8disas import main as disas_main
 import platform
 
 if sys.version_info < (3, 6, 0, 'alpha', 4):
@@ -663,6 +663,7 @@ class Sim:
 		self.brkpoint = Brkpoint(self)
 		self.write = Write(self)
 		self.data_mem = DataMem(self)
+		self.disas = disas_main.Disasm()
 
 		embed_pygame = tk.Frame(self.root, width = config.width, height = config.height)
 		embed_pygame.pack(side = 'left')
@@ -1040,15 +1041,15 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 ''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
 	def decode_instruction(self):
-		disas.input_file = b''
-		for i in range(3): disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
-		disas.addr = 0
-		ins_str, _, dsr_prefix, _ = disas.decode_ins()
+		self.disas.input_file = b''
+		for i in range(3): self.disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
+		self.disas.addr = 0
+		ins_str, _, dsr_prefix, _ = self.disas.decode_ins()
 		if dsr_prefix:
-			disas.last_dsr_prefix = ins_str
-			last_dsr_prefix_str = f'DW {int.from_bytes(disas.input_file[:2], "little"):04X}'
-			disas.addr += 2
-			ins_str, _, _, used_dsr_prefix = disas.decode_ins()
+			self.disas.last_dsr_prefix = ins_str
+			last_dsr_prefix_str = f'DW {int.from_bytes(self.disas.input_file[:2], "little"):04X}'
+			self.disas.addr += 2
+			ins_str, _, _, used_dsr_prefix = self.disas.decode_ins()
 			if used_dsr_prefix: return ins_str
 			else: return last_dsr_prefix_str
 		return ins_str
