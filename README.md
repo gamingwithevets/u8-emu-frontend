@@ -1,7 +1,7 @@
 This is a **frontend** for [Fraser Price / Fraserbc / Delta](https://github.com/Fraserbc)'s [u8_emu](https://github.com/Fraserbc/u8_emu) emulator written in Python. 
 Most of the code was based on the [SimU8 frontend](https://github.com/gamingwithevets/simu8-frontend).
 
-This frontend serves as a replacement to Delta's own frontend that uses `ncurses`. Currently, it's best to use an emulator ROM, as the keyboard for real ROMs doesn't work at the moment.
+This frontend serves as a replacement to Delta's own frontend that uses `ncurses`.
 
 # Installation
 1. Clone this repository and submodules:
