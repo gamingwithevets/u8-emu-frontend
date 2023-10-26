@@ -25,7 +25,13 @@ if pygame.version.vernum < (2, 2, 0):
 	print(f'This program requires at least Pygame 2.2.0. (You are running Pygame {pygame.version.ver})')
 	sys.exit()
 
-exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
+logging.basicConfig(format = '%(levelname)s: %(message)s')
+
+try: exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
+except ImportError as e:
+	logging.error(str(e))
+	sys.exit()
+
 logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
 
 # Thanks Delta / @frsr on Discord!
@@ -170,7 +176,7 @@ class Core:
 		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
 		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom) - 1, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000, rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
@@ -593,7 +599,7 @@ class DataMem(tk.Toplevel):
 		elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
 		elif config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
 
-		self.segment_var = tk.StringVar(); self.segment_var.set(segments[0])
+		self.segment_var = tk.StringVar(value = segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments)
 		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
 		self.segment_cb.pack()
@@ -640,6 +646,55 @@ class DataMem(tk.Toplevel):
 			j += 1
 		return '\n'.join(lines.values())
 
+class GPModify(tk.Toplevel):
+	def __init__(self, sim):
+		super(GPModify, self).__init__()
+		self.sim = sim
+		
+		self.withdraw()
+		self.geometry('300x100')
+		self.resizable(False, False)
+		self.title('Modify general registers')
+		self.protocol('WM_DELETE_WINDOW', self.withdraw)
+		self.vh_reg = self.register(self.sim.validate_hex)
+
+		regs = [str(i) for i in range(16)]
+
+		ttk.Label(self, text = '(please input hex bytes)').pack()
+		modify_frame = tk.Frame(self)
+		ttk.Label(modify_frame, text = 'Change R').pack(side = 'left')
+		ttk.Label(modify_frame, text = ' to:').pack(side = 'right')
+		self.reg_var = tk.StringVar(value = '0')
+		self.reg_var = ttk.Combobox(modify_frame, width = 2, textvariable = self.reg_var, values = regs)
+		self.reg_var.bind('<<ComboboxSelected>>', lambda x: self.update_reg())
+		self.reg_var.pack()
+		modify_frame.pack()
+
+		byte_frame = tk.Frame(self)
+		ttk.Label(byte_frame, text = '#').pack(side = 'left')
+		ttk.Label(byte_frame, text = 'H').pack(side = 'right')
+		self.byte_entry = ttk.Entry(byte_frame, width = '3', justify = 'center', validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.byte_entry.pack()
+		byte_frame.pack()
+
+		ttk.Button(self, text = 'OK').pack(side = 'bottom')
+
+		#self.bind('<Return>', lambda x: self.write())
+		self.bind('<Escape>', lambda x: self.withdraw())
+
+	def open(self):
+		self.deiconify()
+		if self.reg_var.get() == '': self.reg_var.set('0')
+		self.update_reg()
+
+	def update_reg(self):
+		self.byte_entry.delete(0, 'end')
+		self.byte_entry.insert(0, f'{self.sim.sim.core.regs.gp[int(self.reg_var.get())]:02X}')
+
+	def modify(self):
+		self.withdraw
+		self.sim.sim.core.regs.gp[int(self.reg_var.get())] = int(self.byte_entry.get(), 16)
+		self.reg_var.set('0')
+
 class Sim:
 	def __init__(self):
 		self.root = DebounceTk()
@@ -663,6 +718,7 @@ class Sim:
 		self.brkpoint = Brkpoint(self)
 		self.write = Write(self)
 		self.data_mem = DataMem(self)
+		self.gp_modify = GPModify(self)
 		self.disas = disas_main.Disasm()
 
 		embed_pygame = tk.Frame(self.root, width = config.width, height = config.height)
@@ -760,6 +816,7 @@ class Sim:
 		extra_funcs = tk.Menu(self.rc_menu, tearoff = 0)
 		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
 		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
+		extra_funcs.add_command(label = 'Modify general registers', command = self.gp_modify.open)
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Quit', accelerator = 'Q', command = self.exit_sim)
