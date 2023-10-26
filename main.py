@@ -935,11 +935,11 @@ class Sim:
 
 		if sbycon == 2 and all(self.stop_accept):
 			self.stop_mode = True
+			self.stop_accept = [False, False]
 			self.sim.sfr[8] = 0
 			self.sim.sfr[9] = 0
 			self.sim.sfr[0x22] = 0
 			self.sim.sfr[0x23] = 0
-			self.stop_accept = [False, False]
 
 	def timer(self):
 		if self.sim.sfr[0x25] & 1:
@@ -954,6 +954,10 @@ class Sim:
 			if counter == target and self.stop_mode:
 				self.stop_mode = False
 				if config.real_hardware: self.sim.sfr[0x14] = 0x20
+				else:
+					self.sim.data_mem[0xe00] = 0
+					self.sim.data_mem[0xe01] = 0
+					self.sim.data_mem[0xe02] = 0
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
