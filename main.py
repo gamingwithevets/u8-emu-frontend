@@ -676,9 +676,9 @@ class GPModify(tk.Toplevel):
 		self.byte_entry = ttk.Entry(byte_frame, width = '3', justify = 'center', validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.byte_entry.pack()
 		byte_frame.pack()
 
-		ttk.Button(self, text = 'OK').pack(side = 'bottom')
+		ttk.Button(self, text = 'OK', command = self.modify).pack(side = 'bottom')
 
-		#self.bind('<Return>', lambda x: self.write())
+		self.bind('<Return>', lambda x: self.modify())
 		self.bind('<Escape>', lambda x: self.withdraw())
 
 	def open(self):
@@ -691,8 +691,10 @@ class GPModify(tk.Toplevel):
 		self.byte_entry.insert(0, f'{self.sim.sim.core.regs.gp[int(self.reg_var.get())]:02X}')
 
 	def modify(self):
-		self.withdraw
+		self.withdraw()
 		self.sim.sim.core.regs.gp[int(self.reg_var.get())] = int(self.byte_entry.get(), 16)
+		self.sim.print_regs()
+
 		self.reg_var.set('0')
 
 class Sim:
@@ -738,6 +740,7 @@ class Sim:
 					else:
 						if self.use_kb_sfrs: self.keys_pressed.add(k)
 						if not config.real_hardware:
+							self.stop_mode = False
 							self.write_dmem(self.emu_kb[1]+1, 1, 1 << k[0], self.emu_kb[0])
 							self.write_dmem(self.emu_kb[1]+2, 1, 1 << k[1], self.emu_kb[0])
 
@@ -843,6 +846,9 @@ class Sim:
 		self.last_ready = 0
 		self.stop_accept = [False, False]
 		self.stop_mode = False
+
+		self.stop_wait = 200000
+		self.stop_wait_count = 0
 
 		self.ips = 0
 		self.ips_start = time.time()
@@ -999,7 +1005,7 @@ class Sim:
 			self.sim.sfr[0x23] = 0
 
 	def timer(self):
-		if self.sim.sfr[0x25] & 1:
+		if self.sim.sfr[0x25] & 1 and self.stop_wait_count == self.stop_wait:
 			counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
 			target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
 
@@ -1015,6 +1021,9 @@ class Sim:
 					self.sim.data_mem[0xe00] = 0
 					self.sim.data_mem[0xe01] = 0
 					self.sim.data_mem[0xe02] = 0
+				self.stop_wait_count = 0
+
+		else: self.stop_wait_count += 1
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
