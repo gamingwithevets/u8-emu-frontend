@@ -1018,7 +1018,6 @@ class Sim:
 					self.sim.data_mem[0xe00] = 0
 					self.sim.data_mem[0xe01] = 0
 					self.sim.data_mem[0xe02] = 0
-				self.stop_wait_count = 0
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
