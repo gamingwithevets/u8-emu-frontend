@@ -25,14 +25,15 @@ if pygame.version.vernum < (2, 2, 0):
 	print(f'This program requires at least Pygame 2.2.0. (You are running Pygame {pygame.version.ver})')
 	sys.exit()
 
-logging.basicConfig(format = '%(levelname)s: %(message)s')
 
-try: exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
+try:
+	exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
+	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
+	else: logging.basicConfig(format = '%(levelname)s: %(message)s')
 except ImportError as e:
 	logging.error(str(e))
 	sys.exit()
 
-logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
 
 # Thanks Delta / @frsr on Discord!
 class u8_core_t(ctypes.Structure):	# Forward definition so pointers can be used
@@ -847,9 +848,6 @@ class Sim:
 		self.stop_accept = [False, False]
 		self.stop_mode = False
 
-		self.stop_wait = 200000
-		self.stop_wait_count = 0
-
 		self.ips = 0
 		self.ips_start = time.time()
 		self.ips_ctr = 0
@@ -975,9 +973,8 @@ class Sim:
 
 				try:
 					for ki_val, ko_val in self.keys_pressed:
-						if ko & (1 << ko_val):
-							ki &= ~(1 << ki_val)
-							if ki_filter & (1 << ki_val): self.stop_mode = False
+						if ki_filter & (1 << ki_val): self.stop_mode = False
+						if ko & (1 << ko_val): ki &= ~(1 << ki_val)
 				except RuntimeError: pass
 
 			self.sim.sfr[0x40] = ki
@@ -996,7 +993,7 @@ class Sim:
 	def sbycon(self):
 		sbycon = self.sim.sfr[9]
 
-		if sbycon == 2 and all(self.stop_accept):
+		if sbycon & (1 << 1) and all(self.stop_accept):
 			self.stop_mode = True
 			self.stop_accept = [False, False]
 			self.sim.sfr[8] = 0
@@ -1005,7 +1002,7 @@ class Sim:
 			self.sim.sfr[0x23] = 0
 
 	def timer(self):
-		if self.sim.sfr[0x25] & 1 and self.stop_wait_count == self.stop_wait:
+		if self.sim.sfr[0x25] & 1:
 			counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
 			target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
 
@@ -1016,14 +1013,12 @@ class Sim:
 
 			if counter == target and self.stop_mode:
 				self.stop_mode = False
-				if config.real_hardware: self.sim.sfr[0x14] = 0x20
-				else:
+				self.sim.sfr[0x14] = 0x20
+				if not config.real_hardware:
 					self.sim.data_mem[0xe00] = 0
 					self.sim.data_mem[0xe01] = 0
 					self.sim.data_mem[0xe02] = 0
 				self.stop_wait_count = 0
-
-		else: self.stop_wait_count += 1
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
@@ -1039,6 +1034,7 @@ class Sim:
 			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
 				if stpacp & 0xa0 == 0xa0 and not self.stop_accept[1]: self.stop_accept[1] = True
+			else: self.stop_accept[0] = False
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
 
 			self.ok = True
