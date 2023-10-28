@@ -798,16 +798,23 @@ class Sim:
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
 				or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
+					if not self.use_kb_sfrs: self.keys_pressed.clear()
+					self.keys_pressed.add(k)
 					if k is None: self.reset_core(False)
 					else:
-						if self.use_kb_sfrs: self.keys_pressed.add(k)
 						if not config.real_hardware:
 							self.stop_mode = False
 							self.write_dmem(self.emu_kb[1]+1, 1, 1 << k[0], self.emu_kb[0])
 							self.write_dmem(self.emu_kb[1]+2, 1, 1 << k[1], self.emu_kb[0])
 
 		def release_cb(event):
-			if self.use_kb_sfrs: self.keys_pressed.clear()
+			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): self.keys_pressed.clear()
+			if self.use_kb_sfrs:
+				for k, v in config.keymap.items():
+					p = v[0]
+					if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
+						or (event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:]): self.keys_pressed.remove(k)
+			else: self.keys_pressed.clear()
 			if not config.real_hardware:
 				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
 				self.write_dmem(self.emu_kb[1]+2, 1, 0, self.emu_kb[0])
@@ -1034,9 +1041,10 @@ class Sim:
 				ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
 
 				try:
-					for ki_val, ko_val in self.keys_pressed:
-						if ki_filter & (1 << ki_val): self.stop_mode = False
-						if ko & (1 << ko_val): ki &= ~(1 << ki_val)
+					for val in self.keys_pressed:
+						if val == None: continue
+						if ki_filter & (1 << val[0]): self.stop_mode = False
+						if ko & (1 << val[1]): ki &= ~(1 << val[0])
 				except RuntimeError: pass
 
 			self.sim.sfr[0x40] = ki
@@ -1301,6 +1309,9 @@ class Sim:
 
 		self.screen.fill((0, 0, 0))
 		self.screen.blit(self.interface, self.interface_rect)
+		try:
+			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGBA_ADD)
+		except RuntimeError: pass
 
 		if config.hardware_id in self.screen_stuff: scr = self.screen_stuff[config.hardware_id]
 		else: scr = self.screen_stuff[3]
