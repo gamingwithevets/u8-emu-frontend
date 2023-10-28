@@ -1015,9 +1015,10 @@ class Sim:
 				self.stop_mode = False
 				self.sim.sfr[0x14] = 0x20
 				if not config.real_hardware:
-					self.sim.data_mem[0xe00] = 0
-					self.sim.data_mem[0xe01] = 0
-					self.sim.data_mem[0xe02] = 0
+					for i in range(3):
+						if config.hardware_id == 0: self.sim.data_mem[0x800 + i] = 0
+						if config.hardware_id in (4, 5): self.sim.rw_seg[0x8e00 + i] = 0
+						else: self.sim.data_mem[0xe00 + i] = 0
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"

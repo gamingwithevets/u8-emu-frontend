@@ -38,7 +38,7 @@ interface_path = 'images/interface_esp_83gtp.png'
 width = 405
 height = 816
 
-# Width and height of the status bar.
+# Width and height of the status bar. (optional)
 s_width = 288
 s_height = 12
 
