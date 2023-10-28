@@ -768,9 +768,12 @@ class Sim:
 
 		self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
 		self.interface_rect = self.interface.get_rect()
-		self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
+
+		status_bar = pygame.image.load(config.status_bar_path)
+		sbar_w = status_bar.get_width()
+		self.sbar_hi = status_bar.get_height()
+		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else self.sbar_hi))
 		self.status_bar_rect = self.status_bar.get_rect()
-		self.sbar_hi = self.status_bar.get_height()
 
 		self.show_regs = tk.BooleanVar(value = True)
 		self.disp_lcd = tk.IntVar(value = 0)
@@ -861,6 +864,7 @@ class Sim:
 		5: (8, 0x8e00),
 		}
 		self.emu_kb = self.emu_kbs[config.hardware_id]
+
 
 	def set_use_kb_sfrs(self): self.use_kb_sfrs = self.use_kb_sfrs_tk.get()
 
