@@ -813,7 +813,9 @@ class Sim:
 				for k, v in config.keymap.items():
 					p = v[0]
 					if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-						or (event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:]): self.keys_pressed.remove(k)
+						or (event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:]):
+							try: self.keys_pressed.remove(k)
+							except KeyError: self.keys_pressed.clear()
 			else: self.keys_pressed.clear()
 			if not config.real_hardware:
 				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
