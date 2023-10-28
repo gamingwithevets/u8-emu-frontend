@@ -479,7 +479,7 @@ class Jump(tk.Toplevel):
 
 		self.sim.sim.core.regs.csr = int(csr_entry, 16) if csr_entry else 0
 		self.sim.sim.core.regs.pc = int(pc_entry, 16) if pc_entry else 0
-		self.sim.print_regs()
+		self.sim.reg_display.print_regs()
 		self.withdraw()
 
 		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
@@ -513,7 +513,7 @@ class Brkpoint(tk.Toplevel):
 		pc_entry = self.pc_entry.get()
 		if csr_entry == '' or pc_entry == '': return
 		self.sim.breakpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
-		self.sim.print_regs()
+		self.sim.reg_display.print_regs()
 		self.withdraw()
 
 		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
@@ -521,7 +521,7 @@ class Brkpoint(tk.Toplevel):
 
 	def clear_brkpoint(self):
 		self.sim.breakpoint = None
-		self.sim.print_regs()
+		self.sim.reg_display.print_regs()
 
 class Write(tk.Toplevel):
 	def __init__(self, sim):
@@ -573,7 +573,7 @@ class Write(tk.Toplevel):
 			self.sim.write_dmem(adr + index, num, int.from_bytes(byte[index:index+num], 'little'), seg)
 			index += num
 
-		self.sim.print_regs()
+		self.sim.reg_display.print_regs()
 		self.sim.data_mem.get_mem()
 		self.withdraw()
 
@@ -622,17 +622,18 @@ class DataMem(tk.Toplevel):
 		self.deiconify()
 
 	def get_mem(self, keep_yview = True):
-		seg = self.segment_var.get()
-		if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
-		elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
-		elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
+		if self.wm_state() != 'iconic':
+			seg = self.segment_var.get()
+			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
+			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
+			elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
 
-		self.code_text['state'] = 'normal'
-		yview_bak = self.code_text.yview()[0]
-		self.code_text.delete('1.0', 'end')
-		self.code_text.insert('end', data)
-		if keep_yview: self.code_text.yview_moveto(str(yview_bak))
-		self.code_text['state'] = 'disabled'
+			self.code_text['state'] = 'normal'
+			yview_bak = self.code_text.yview()[0]
+			self.code_text.delete('1.0', 'end')
+			self.code_text.insert('end', data)
+			if keep_yview: self.code_text.yview_moveto(str(yview_bak))
+			self.code_text['state'] = 'disabled'
 
 	@staticmethod
 	@functools.lru_cache
@@ -694,19 +695,78 @@ class GPModify(tk.Toplevel):
 	def modify(self):
 		self.withdraw()
 		self.sim.sim.core.regs.gp[int(self.reg_var.get())] = int(self.byte_entry.get(), 16)
-		self.sim.print_regs()
+		self.sim.reg_display.print_regs()
 
 		self.reg_var.set('0')
+
+class RegDisplay(tk.Toplevel):
+	def __init__(self, sim):
+		super(RegDisplay, self).__init__()
+		self.sim = sim
+		
+		self.withdraw()
+		self.geometry('400x800')
+		self.title('Register display')
+		self.protocol('WM_DELETE_WINDOW', self.withdraw)
+		self['bg'] = config.console_bg
+
+		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
+		self.info_label.pack(side = 'left', fill = 'both')
+
+	def print_regs(self):
+		regs = self.sim.sim.core.regs
+
+		csr = regs.csr
+		pc = regs.pc
+		sp = regs.sp
+		psw = regs.psw
+		psw_f = format(psw, '08b')
+
+		if self.wm_state() != 'iconic': self.info_label['text'] = f'''\
+=== REGISTERS ===
+
+General registers:
+R0   R1   R2   R3   R4   R5   R6   R7
+''' + '   '.join(f'{regs.gp[i]:02X}' for i in range(8)) + f'''
+ 
+R8   R9   R10  R11  R12  R13  R14  R15
+''' + '   '.join(f'{regs.gp[8+i]:02X}' for i in range(8)) + f'''
+
+Control registers:
+CSR:PC          {csr:X}:{pc:04X}H (prev. value: {self.sim.prev_csr_pc})
+Words @ CSR:PC  ''' + ' '.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(3)) + f'''
+Instruction     {self.sim.decode_instruction()}
+SP              {sp:04X}H
+Words @ SP      ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(0, 8, 2)) + f'''
+                ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(8, 16, 2)) + f'''
+DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
+
+                   C Z S OV MIE HC ELEVEL
+PSW             {psw:02X} {psw_f[0]} {psw_f[1]} {psw_f[2]}  {psw_f[3]}  {psw_f[4]}   {psw_f[5]} {psw_f[6:]} ({int(psw_f[6:], 2)})
+
+LCSR:LR         {regs.lcsr:X}:{regs.lr:04X}H
+ECSR1:ELR1      {regs.ecsr[0]:X}:{regs.elr[0]:04X}H
+ECSR2:ELR2      {regs.ecsr[1]:X}:{regs.elr[1]:04X}H
+ECSR3:ELR3      {regs.ecsr[2]:X}:{regs.elr[2]:04X}H
+
+EPSW1           {regs.epsw[0]:02X}
+EPSW2           {regs.epsw[1]:02X}
+EPSW3           {regs.epsw[2]:02X}
+
+Other information:
+Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
+STOP mode                [{'x' if self.sim.stop_mode else ' '}]
+Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None'}\
+'''
 
 class Sim:
 	def __init__(self):
 		self.root = DebounceTk()
-		self.root.geometry(f'{config.width*2}x{config.height}')
+		self.root.geometry(f'{config.width}x{config.height}')
 		self.root.resizable(False, False)
 		self.root.title(config.root_w_name)
 		self.root.focus_set()
-		self.root['bg'] = config.console_bg
-
+		
 		rom = open(config.rom_file, 'rb').read()
 		self.sim = Core(rom)
 
@@ -722,6 +782,7 @@ class Sim:
 		self.write = Write(self)
 		self.data_mem = DataMem(self)
 		self.gp_modify = GPModify(self)
+		self.reg_display = RegDisplay(self)
 		self.disas = disas_main.Disasm()
 
 		embed_pygame = tk.Frame(self.root, width = config.width, height = config.height)
@@ -758,9 +819,6 @@ class Sim:
 
 		if os.name != 'nt': self.root.update()
 
-		self.info_label = tk.Label(self.root, text = 'Loading...', width = config.width, height = config.height, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
-		self.info_label.pack(side = 'left')
-
 		os.environ['SDL_WINDOWID'] = str(embed_pygame.winfo_id())
 		os.environ['SDL_VIDEODRIVER'] = 'windib' if os.name == 'nt' else 'x11'
 		pygame.init()
@@ -775,11 +833,11 @@ class Sim:
 		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else self.sbar_hi))
 		self.status_bar_rect = self.status_bar.get_rect()
 
-		self.show_regs = tk.BooleanVar(value = True)
 		self.disp_lcd = tk.IntVar(value = 0)
 		self.use_kb_sfrs_tk = tk.BooleanVar(value = self.use_kb_sfrs)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
+		self.rc_menu.add_command(label = 'Step', accelerator = '\\', command = self.set_step)
 		self.rc_menu.add_command(label = 'Enable single-step mode', accelerator = 'S', command = lambda: self.set_single_step(True))
 		self.rc_menu.add_command(label = 'Resume execution (unpause)', accelerator = 'P', command = lambda: self.set_single_step(False))
 		self.rc_menu.add_separator()
@@ -790,7 +848,8 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
 		self.rc_menu.add_separator()
-		self.rc_menu.add_checkbutton(label = 'Show registers outside of single-step', accelerator = 'R', variable = self.show_regs)
+		self.rc_menu.add_command(label = 'Register display', accelerator = 'R', command = self.reg_display.deiconify)
+		self.rc_menu.add_separator()
 
 		self.screen_stuff = {
 		# hwid: (alloc, used, rows, buffers, columns)
@@ -829,13 +888,14 @@ class Sim:
 		self.rc_menu.add_command(label = 'Quit', accelerator = 'Q', command = self.exit_sim)
 
 		self.root.bind('<Button-3>', self.open_popup)
+		self.root.bind('\\', lambda x: self.set_step())
 		self.bind_('s', lambda x: self.set_single_step(True))
 		self.bind_('p', lambda x: self.set_single_step(False))
 		self.bind_('j', lambda x: self.jump.deiconify())
 		self.bind_('b', lambda x: self.brkpoint.deiconify())
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
-		self.bind_('r', lambda x: self.show_regs.set(not self.show_regs.get()))
+		self.bind_('r', lambda x: self.reg_display.deiconify())
 		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
 		self.bind_('c', lambda x: self.reset_core())
 		self.bind_('q', lambda x: self.exit_sim())
@@ -854,6 +914,7 @@ class Sim:
 		self.ips = 0
 		self.ips_start = time.time()
 		self.ips_ctr = 0
+		
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 		self.emu_kbs = {
@@ -865,14 +926,11 @@ class Sim:
 		}
 		self.emu_kb = self.emu_kbs[config.hardware_id]
 
-
 	def set_use_kb_sfrs(self): self.use_kb_sfrs = self.use_kb_sfrs_tk.get()
 
 	def run(self):
-		self.reset_core()
+		self.reset_core(False)
 		self.pygame_loop()
-
-		self.root.bind('\\', lambda x: self.set_step())
 
 		if os.name != 'nt': os.system('xset r off')
 		self.root.mainloop()
@@ -958,7 +1016,7 @@ class Sim:
 
 		self.single_step = val
 		if val:
-			self.print_regs()
+			self.reg_display.print_regs()
 			self.data_mem.get_mem()
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
 
@@ -1061,54 +1119,6 @@ class Sim:
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
-
-	def print_regs(self):
-		regs = self.sim.core.regs
-
-		csr = regs.csr
-		pc = regs.pc
-		sp = regs.sp
-		psw = regs.psw
-		psw_f = format(psw, '08b')
-
-		self.info_label['text'] = f'''\
-=== REGISTERS ===
-
-General registers:
-R0   R1   R2   R3   R4   R5   R6   R7
-''' + '   '.join(f'{regs.gp[i]:02X}' for i in range(8)) + f'''
- 
-R8   R9   R10  R11  R12  R13  R14  R15
-''' + '   '.join(f'{regs.gp[8+i]:02X}' for i in range(8)) + f'''
-
-Control registers:
-CSR:PC          {csr:X}:{pc:04X}H (prev. value: {self.prev_csr_pc})
-Words @ CSR:PC  ''' + ' '.join(format(self.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(3)) + f'''
-Instruction     {self.decode_instruction()}
-SP              {sp:04X}H
-Words @ SP      ''' + ' '.join(format(self.read_dmem(sp + i, 2), '04X') for i in range(0, 8, 2)) + f'''
-                ''' + ' '.join(format(self.read_dmem(sp + i, 2), '04X') for i in range(8, 16, 2)) + f'''
-DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
-
-                   C Z S OV MIE HC ELEVEL
-PSW             {psw:02X} {psw_f[0]} {psw_f[1]} {psw_f[2]}  {psw_f[3]}  {psw_f[4]}   {psw_f[5]} {psw_f[6:]} ({int(psw_f[6:], 2)})
-
-LCSR:LR         {regs.lcsr:X}:{regs.lr:04X}H
-ECSR1:ELR1      {regs.ecsr[0]:X}:{regs.elr[0]:04X}H
-ECSR2:ELR2      {regs.ecsr[1]:X}:{regs.elr[1]:04X}H
-ECSR3:ELR3      {regs.ecsr[2]:X}:{regs.elr[2]:04X}H
-
-EPSW1           {regs.epsw[0]:02X}
-EPSW2           {regs.epsw[1]:02X}
-EPSW3           {regs.epsw[2]:02X}
-
-Other information:
-Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.breakpoint % 0x10000, '04X') + 'H' if self.breakpoint is not None else 'None'}
-STOP mode acceptor       Level 1 [{'x' if self.stop_accept[0] else ' '}]
-                         Level 2 [{'x' if self.stop_accept[1] else ' '}]
-STOP mode                [{'x' if self.stop_mode else ' '}]
-Instructions per second  {format(self.ips, '.1f') if self.ips is not None and not self.single_step else 'None'}\
-''' if self.single_step or (not self.single_step and self.show_regs.get()) else '=== REGISTER DISPLAY DISABLED ===\nTo enable, do one of these things:\n- Enable single-step.\n- Press R or right-click >\n  Show registers outside of single-step.'
 
 	def decode_instruction(self):
 		self.disas.input_file = b''
@@ -1252,7 +1262,7 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 		self.core_reset()
 		self.prev_csr_pc = None
 		self.set_single_step(single_step)
-		self.print_regs()
+		self.reg_display.print_regs()
 		self.data_mem.get_mem()
 
 	def core_reset(self):
@@ -1284,7 +1294,7 @@ Instructions per second  {format(self.ips, '.1f') if self.ips is not None and no
 
 		if self.single_step and self.step: self.core_step()
 		if (self.single_step and self.step) or not self.single_step:
-			self.print_regs()
+			self.reg_display.print_regs()
 			if self.data_mem.winfo_viewable(): self.data_mem.get_mem()
 
 		self.clock.tick()
