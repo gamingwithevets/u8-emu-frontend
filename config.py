@@ -34,9 +34,13 @@ interface_path = 'images/interface_esp_83gtp.png'
 
 # Settings for the Tkinter window.
 
-# Width and height of the Pygame embed widget.
+# Width and height of the Pygame embed widget and interface image.
 width = 405
 height = 816
+
+# Width and height of the status bar.
+s_width = 288
+s_height = 12
 
 # Name of the Tkinter window.
 root_w_name = 'fx-83GT PLUS Emulator'

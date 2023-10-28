@@ -766,9 +766,9 @@ class Sim:
 		pygame.init()
 		self.screen = pygame.display.set_mode()
 
-		self.interface = pygame.image.load(config.interface_path)
+		self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
 		self.interface_rect = self.interface.get_rect()
-		self.status_bar = pygame.image.load(config.status_bar_path)
+		self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
 		self.status_bar_rect = self.status_bar.get_rect()
 		self.sbar_hi = self.status_bar.get_height()
 
