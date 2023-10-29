@@ -1075,7 +1075,6 @@ class Sim:
 			self.stop_mode = True
 			self.stop_accept = [False, False]
 			self.sim.sfr[8] = 0
-			self.sim.sfr[9] = 0
 			self.sim.sfr[0x22] = 0
 			self.sim.sfr[0x23] = 0
 
@@ -1091,6 +1090,7 @@ class Sim:
 
 			if counter == target and self.stop_mode:
 				self.stop_mode = False
+				self.sim.sfr[9] &= ~(1 << 1)
 				self.sim.sfr[0x14] = 0x20
 				if not config.real_hardware:
 					for i in range(3):
