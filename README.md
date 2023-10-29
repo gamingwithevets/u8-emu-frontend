@@ -22,3 +22,22 @@ When you open the emulator, you can right-click to see the available functions o
 
 To use a custom configuration Python script, run `python main.py <module-name>` (or `python3 main.py <module-name>`).
 `<module-name>` is the name of the Python script in module name form; for example if your configuration file is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
+
+# Images
+This emulator uses images extracted from emulators. To get them, you need to open the emulator EXE and DLL in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker).
+
+## fx-ES (PLUS) Emulator
+- For the interface, you need to extract bitmap **3001** from the emulator **DLL**.
+- For the status bar, you need to extract bitmap **135** from the emulator **EXE**.
+
+## ClassWiz Emulator Subscription
+- For the interface, you need to extract bitmap **103** from the emulator **DLL**.
+- For the status bar, you need to extract bitmap **136** from the emulator **EXE**.
+
+## fx-ES PLUS Emulator Subscription
+- For the interface, you need to extract bitmap **103** from the emulator **DLL**.
+- For the status bar, you need to extract bitmap **171** from the emulator **EXE**.
+
+## fx-92 Collège Emulator Ver.USB
+- For the interface, you need to extract bitmap **8000** from the emulator **DLL**.
+- For the status bar, you need to extract bitmap **136** from the emulator **EXE**.
