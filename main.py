@@ -622,7 +622,7 @@ class DataMem(tk.Toplevel):
 		self.deiconify()
 
 	def get_mem(self, keep_yview = True):
-		if self.wm_state() != 'iconic':
+		if self.wm_state() == 'normal':
 			seg = self.segment_var.get()
 			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
 			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
@@ -684,9 +684,9 @@ class GPModify(tk.Toplevel):
 		self.bind('<Escape>', lambda x: self.withdraw())
 
 	def open(self):
-		self.deiconify()
 		if self.reg_var.get() == '': self.reg_var.set('0')
 		self.update_reg()
+		self.deiconify()
 
 	def update_reg(self):
 		self.byte_entry.delete(0, 'end')
@@ -713,6 +713,10 @@ class RegDisplay(tk.Toplevel):
 		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
 		self.info_label.pack(side = 'left', fill = 'both')
 
+	def open(self):
+		self.print_regs()
+		self.deiconify()
+
 	def print_regs(self):
 		regs = self.sim.sim.core.regs
 
@@ -722,7 +726,7 @@ class RegDisplay(tk.Toplevel):
 		psw = regs.psw
 		psw_f = format(psw, '08b')
 
-		if self.wm_state() != 'iconic': self.info_label['text'] = f'''\
+		if self.wm_state() == 'normal': self.info_label['text'] = f'''\
 === REGISTERS ===
 
 General registers:
@@ -754,7 +758,7 @@ EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
 Other information:
-Breakpoint               {format(self.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
+Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None'}\
 '''
@@ -790,6 +794,8 @@ class Sim:
 		embed_pygame.focus_set()
 
 		self.use_kb_sfrs = config.real_hardware
+
+		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 
 		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
 
@@ -857,7 +863,7 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
 		self.rc_menu.add_separator()
-		self.rc_menu.add_command(label = 'Register display', accelerator = 'R', command = self.reg_display.deiconify)
+		self.rc_menu.add_command(label = 'Register display', accelerator = 'R', command = self.reg_display.open)
 		self.rc_menu.add_separator()
 
 		self.screen_stuff = {
@@ -904,7 +910,7 @@ class Sim:
 		self.bind_('b', lambda x: self.brkpoint.deiconify())
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
-		self.bind_('r', lambda x: self.reg_display.deiconify())
+		self.bind_('r', lambda x: self.reg_display.open())
 		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
 		self.bind_('c', lambda x: self.reset_core())
 		self.bind_('q', lambda x: self.exit_sim())
@@ -1095,6 +1101,7 @@ class Sim:
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
 		prev_dsr = self.sim.core.regs.dsr
+		f820_val = self.sim.sfr[0x820]
 
 		if not self.stop_mode:
 			self.ok = False
@@ -1119,13 +1126,15 @@ class Sim:
 
 			self.ips_ctr += 1
 		
+			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step:
+				tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
+				self.set_single_step(True)
+				self.reg_display.open()
+				self.keys_pressed.clear()
+
 		self.keyboard()
 		self.sbycon()
 		if self.stop_mode: self.timer()
-
-		if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint:
-			tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
-			self.set_single_step(True)
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
@@ -1345,19 +1354,19 @@ class Sim:
 				n = lambda j: config.pix*(5*i+offset+j) if i < 11 else config.pix*(11*5+offset) + config.pix_s*(small_offset+5*(i-11)+j)
 				pix = config.pix if i < 11 else config.pix_s
 				if i == 0:
-					if screen_data[-2]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
+					if screen_data[-2]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
 				elif i == 11:
-					if screen_data[-1]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
+					if screen_data[-1]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
 				else:
 					data = screen_data[i-(1 if i < 12 else 2)]
-					if data[0]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi,                 pix*2, pix))
-					if data[1]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(0), config.screen_tl_h + offset_h + self.sbar_hi + pix,    pix,   pix*4))
-					if data[2]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix,    pix,   pix*4))
-					if data[3]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
-					if data[4]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(0), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
-					if data[5]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
-					if data[6]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*10, pix*2, pix))
-					if data[7] and i < 11: pygame.draw.circle(self.screen, (0, 0, 0), (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
+					if data[0]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi,                 pix*2, pix))
+					if data[1]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(0), config.screen_tl_h + offset_h + self.sbar_hi + pix,    pix,   pix*4))
+					if data[2]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix,    pix,   pix*4))
+					if data[3]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
+					if data[4]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(0), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
+					if data[5]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
+					if data[6]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*10, pix*2, pix))
+					if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
 		elif config.hardware_id == 5:
 			for y in range(scr[2] - 1):
 				for x in range(scr[4]):
@@ -1366,7 +1375,7 @@ class Sim:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
 					for x in range(scr[4]):
-						if screen_data[y][x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
+						if screen_data[y][x]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44 if self.num_buffers > 0 else 22, config.pygame_color, anchor = 'midtop')

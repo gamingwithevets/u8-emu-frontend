@@ -67,6 +67,9 @@ pix = 3
 # Small pixel size. Only used for fx-82SOLAR II.
 # pix_s = None
 
+# Pixel color. Optional; default is (0, 0, 0).
+pix_color = (0, 0, 0)
+
 # Hex display window size.
 data_mem_width = 700
 data_mem_height = 600
