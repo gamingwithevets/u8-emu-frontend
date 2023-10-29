@@ -929,7 +929,13 @@ class Sim:
 		self.ips = 0
 		self.ips_start = time.time()
 		self.ips_ctr = 0
-		
+
+		self.nsps = 1e9
+		self.max_ns_per_update = 1e9
+		self.max_ticks_per_update = 100
+		self.tps = 10000
+		self.last_time = 0
+		self.passed_time = 0
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 		self.emu_kbs = {
@@ -1079,16 +1085,29 @@ class Sim:
 			self.sim.sfr[0x23] = 0
 
 	def timer(self):
+		now = time.time_ns()
+		passed_ns = now - self.last_time
+		self.last_time = now
+		if passed_ns < 0: passed_ns = 0
+		elif passed_ns > self.max_ns_per_update: passed_ns = 0
+
+		self.passed_time += passed_ns * self.tps / self.nsps
+		ticks = int(self.passed_time) if self.passed_time < 100 else 100
+		self.passed_time -= ticks
+
+		self.timer_tick(ticks)
+
+	def timer_tick(self, tick):
 		if self.sim.sfr[0x25] & 1:
 			counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
 			target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
 
-			counter = (counter + 1) & 0xffff
+			counter = (counter + tick) & 0xffff
 
 			self.sim.sfr[0x22] = counter & 0xff
 			self.sim.sfr[0x23] = counter >> 8
 
-			if counter == target and self.stop_mode:
+			if counter >= target and self.stop_mode:
 				self.stop_mode = False
 				self.sim.sfr[9] &= ~(1 << 1)
 				self.sim.sfr[0x14] = 0x20
@@ -1133,8 +1152,8 @@ class Sim:
 				self.keys_pressed.clear()
 
 		self.keyboard()
-		self.sbycon()
 		if self.stop_mode: self.timer()
+		else: self.sbycon()
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
