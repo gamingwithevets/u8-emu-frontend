@@ -1132,7 +1132,7 @@ class Sim:
 			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
 				if stpacp & 0xa0 == 0xa0 and not self.stop_accept[1]: self.stop_accept[1] = True
-				else: self.stop_accept[0] = False
+				elif stpacp & 0x50 != 0x50: self.stop_accept[0] = False
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
 
 			self.ok = True
