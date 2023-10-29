@@ -176,12 +176,17 @@ class Core:
 
 		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
+		blank_code_mem_fp = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
+		blank_code_mem_f = blank_code_mem_fp(self.blank_code_mem)
+
 		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, len(rom) - 1, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000, rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata), u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,       len(rom) - 1,                    u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata),                 u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
 		]
+
+		if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
 
 		if config.hardware_id == 4: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
@@ -244,6 +249,8 @@ class Core:
 	
 	def write_mem_code(self, dsr, offset, size, value):
 		return sim_lib.write_mem_code(ctypes.pointer(self.core), dsr, offset, size, value)
+
+	def blank_code_mem(self, core, seg, addr): return 0xff
 
 # https://github.com/JamesGKent/python-tkwidgets/blob/master/Debounce.py
 class Debounce():
@@ -1106,7 +1113,6 @@ class Sim:
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
 		prev_dsr = self.sim.core.regs.dsr
-		f820_val = self.sim.sfr[0x820]
 
 		if not self.stop_mode:
 			self.ok = False
