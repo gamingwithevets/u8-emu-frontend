@@ -1063,17 +1063,6 @@ class Sim:
 
 			self.sim.sfr[0x40] = ki
 
-		if not config.real_hardware:
-			if config.hardware_id == 0: ready = self.sim.data_mem[0x800]
-			elif config.hardware_id in (4, 5): ready = self.sim.rw_seg[0x8e00]
-			else: ready = self.sim.data_mem[0xe00]
-
-			if not self.last_ready and ready:
-				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
-				self.write_dmem(self.emu_kb[1]+2, 1, 0, self.emu_kb[0])
-			
-			self.last_ready = ready
-
 	def sbycon(self):
 		sbycon = self.sim.sfr[9]
 
