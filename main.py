@@ -823,9 +823,6 @@ class Sim:
 							try: self.keys_pressed.remove(k)
 							except KeyError: self.keys_pressed.clear()
 			else: self.keys_pressed.clear()
-			if not config.real_hardware:
-				self.write_dmem(self.emu_kb[1]+1, 1, 0, self.emu_kb[0])
-				self.write_dmem(self.emu_kb[1]+2, 1, 0, self.emu_kb[0])
 
 		embed_pygame.bind('<KeyPress>', press_cb)
 		embed_pygame.bind('<KeyRelease>', release_cb)
