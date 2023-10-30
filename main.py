@@ -625,8 +625,8 @@ class DataMem(tk.Toplevel):
 		self.get_mem()
 
 	def open(self):
-		self.get_mem()
 		self.deiconify()
+		self.get_mem()
 
 	def get_mem(self, keep_yview = True):
 		if self.wm_state() == 'normal':
@@ -721,8 +721,8 @@ class RegDisplay(tk.Toplevel):
 		self.info_label.pack(side = 'left', fill = 'both')
 
 	def open(self):
-		self.print_regs()
 		self.deiconify()
+		self.print_regs()
 
 	def print_regs(self):
 		regs = self.sim.sim.core.regs
@@ -753,7 +753,7 @@ Words @ SP      ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for 
 DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
 
                    C Z S OV MIE HC ELEVEL
-PSW             {psw:02X} {psw_f[0]} {psw_f[1]} {psw_f[2]}  {psw_f[3]}  {psw_f[4]}   {psw_f[5]} {psw_f[6:]} ({int(psw_f[6:], 2)})
+PSW             {psw:02X} {self.fmt_x(psw_f[0])} {self.fmt_x(psw_f[1])} {self.fmt_x(psw_f[2])}  {self.fmt_x(psw_f[3])}  {self.fmt_x(psw_f[4])}   {self.fmt_x(psw_f[5])} {psw_f[6:]} ({int(psw_f[6:], 2)})
 
 LCSR:LR         {regs.lcsr:X}:{regs.lr:04X}H
 ECSR1:ELR1      {regs.ecsr[0]:X}:{regs.elr[0]:04X}H
@@ -769,6 +769,10 @@ Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None'}\
 '''
+
+	@staticmethod
+	@functools.lru_cache
+	def fmt_x(val): return 'x' if int(val) else ' '
 
 class Sim:
 	def __init__(self):
@@ -1140,7 +1144,7 @@ class Sim:
 				self.ips_start = cur
 
 			self.ips_ctr += 1
-		
+
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step:
 				tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
 				self.set_single_step(True)
