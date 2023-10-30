@@ -848,9 +848,13 @@ class Sim:
 
 		status_bar = pygame.image.load(config.status_bar_path)
 		sbar_w = status_bar.get_width()
-		self.sbar_hi = status_bar.get_height()
-		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else self.sbar_hi))
+		sbar_hi = status_bar.get_height()
+		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else sbar_hi))
 		self.status_bar_rect = self.status_bar.get_rect()
+
+		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
+
+		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
 
 		self.disp_lcd = tk.IntVar(value = 0)
 		self.use_kb_sfrs_tk = tk.BooleanVar(value = self.use_kb_sfrs)
@@ -1339,7 +1343,7 @@ class Sim:
 		else: scr = self.screen_stuff[3]
 
 		disp_lcd = self.disp_lcd.get()
-		if self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ 00:"+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, 22, config.pygame_color, anchor = 'midtop')
+		if self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ 00:"+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
 		else: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
@@ -1389,7 +1393,7 @@ class Sim:
 						if screen_data[y][x]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
-		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, 44 if self.num_buffers > 0 else 22, config.pygame_color, anchor = 'midtop')
+		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
 
 		pygame.display.update()
 		self.root.update()

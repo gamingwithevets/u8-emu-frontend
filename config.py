@@ -57,6 +57,9 @@ console_fg = '#cccccc'
 # Pygame text color.
 pygame_color = (255, 255, 255)
 
+# Y coordinate of the text.
+text_y = 22
+
 # Top left corner of the screen.
 screen_tl_w = 58
 screen_tl_h = 132
