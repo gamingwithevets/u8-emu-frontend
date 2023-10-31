@@ -24,23 +24,15 @@ To use a custom configuration Python script, run `python main.py <module-name>` 
 `<module-name>` is the name of the Python script in module name form; for example if your configuration file is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
 
 # Images
-This emulator uses images extracted from emulators. To get them, you need to open the emulator EXE and DLL in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker).
+This emulator uses images extracted from emulators. To get them, you need to open the emulator EXE and DLL in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker)
+and extract the right bitmaps.
 
-## fx-ES (PLUS) Emulator
-- For the interface, you need to extract bitmap **3001** from the emulator **DLL**.
-- For the status bar, you need to extract bitmap **135** from the emulator **EXE**.
-
-## ClassWiz Emulator Subscription
-- For the interface, you need to extract bitmap **103** from the emulator **DLL**.
-- For the status bar, you need to extract bitmap **136** from the emulator **EXE**.
-
-## fx-ES PLUS Emulator Subscription
-- For the interface, you need to extract bitmap **103** from the emulator **DLL**.
-- For the status bar, you need to extract bitmap **171** from the emulator **EXE**.
-
-## fx-92 Collège Emulator Ver.USB
-- For the interface, you need to extract bitmap **8000** from the emulator **DLL**.
-- For the status bar, you need to extract bitmap **136** from the emulator **EXE**.
+| | Interface bitmap (DLL) | Status bar bitmap (EXE) |
+|--|--|--|
+| fx-ES (PLUS) Emulator            | 3001 | 135
+| ClassWiz Emulator Subscription   | 103  | 136
+| fx-ES PLUS Emulator Subscription | 103  | 171
+| fx-92 Collège Emulator Ver.USB   | 8000 | 136
 
 # ROM8 support
 This frontend supports the ROM8 file format created by [pitust](https://github.com/pitust). See `config.py` for how to set it up.
