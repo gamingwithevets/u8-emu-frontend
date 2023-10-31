@@ -870,32 +870,32 @@ class Sim:
 		embed_pygame.pack(side = 'left')
 		embed_pygame.focus_set()
 
-		self.use_kb_sfrs = config.real_hardware
-
 		def press_cb(event):
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
 				or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
-					if not self.use_kb_sfrs: self.keys_pressed.clear()
 					self.keys_pressed.add(k)
 					if k is None: self.reset_core(False)
 					else:
 						if not config.real_hardware:
 							self.stop_mode = False
-							self.write_dmem(self.emu_kb[1]+1, 1, 1 << k[0], self.emu_kb[0])
-							self.write_dmem(self.emu_kb[1]+2, 1, 1 << k[1], self.emu_kb[0])
+							self.write_emu_kb(1, 1 << k[0])
+							self.write_emu_kb(2, 1 << k[1])
 
 		def release_cb(event):
-			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): self.keys_pressed.clear()
-			if self.use_kb_sfrs:
-				for k, v in config.keymap.items():
-					p = v[0]
-					if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-						or (event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:]):
-							try: self.keys_pressed.remove(k)
-							except KeyError: self.keys_pressed.clear()
-			else: self.keys_pressed.clear()
+			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
+				self.keys_pressed.clear()
+				return
+
+			for k, v in config.keymap.items():
+				p = v[0]
+				if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
+					or (event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:]):
+						try: self.keys_pressed.remove(k)
+						except KeyError:
+							self.keys_pressed.clear()
+							return
 
 		embed_pygame.bind('<KeyPress>', press_cb)
 		embed_pygame.bind('<KeyRelease>', release_cb)
@@ -919,7 +919,6 @@ class Sim:
 		self.status_bar_rect = self.status_bar.get_rect()
 
 		self.disp_lcd = tk.IntVar(value = 0)
-		self.use_kb_sfrs_tk = tk.BooleanVar(value = self.use_kb_sfrs)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Step', accelerator = '\\', command = self.set_step)
@@ -958,8 +957,6 @@ class Sim:
 			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ 00:{self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
 		
-		if not config.real_hardware: self.rc_menu.add_checkbutton(label = 'Use keyboard SFRs', variable = self.use_kb_sfrs_tk, command = self.set_use_kb_sfrs)
-
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Reset core', accelerator = 'C', command = self.reset_core)
 		self.rc_menu.add_separator()
@@ -992,7 +989,6 @@ class Sim:
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
-		self.last_ready = 0
 		self.stop_accept = [False, False]
 		self.stop_mode = False
 
@@ -1008,16 +1004,16 @@ class Sim:
 		self.passed_time = 0
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
-		self.emu_kbs = {
-		0: (0, 0xe800),
-		2: (0, 0x8e00),
-		3: (0, 0x8e00),
-		4: (4, 0x8e00),
-		5: (8, 0x8e00),
-		}
-		self.emu_kb = self.emu_kbs[config.hardware_id]
 
-	def set_use_kb_sfrs(self): self.use_kb_sfrs = self.use_kb_sfrs_tk.get()
+	def read_emu_kb(self, idx):
+		if config.hardware_id == 0: return self.sim.data_mem[0x800 + idx]
+		elif config.hardware_id in (4, 5): return self.sim.rw_seg[0x8e00 + idx]
+		else: return self.sim.data_mem[0xe00 + idx]
+
+	def write_emu_kb(self, idx, val):
+		if config.hardware_id == 0: self.sim.data_mem[0x800 + idx] = val & 0xff
+		elif config.hardware_id in (4, 5): self.sim.rw_seg[0x8e00 + idx] = val & 0xff
+		else: self.sim.data_mem[0xe00 + idx] = val & 0xff
 
 	def run(self):
 		self.reset_core(False)
@@ -1116,22 +1112,24 @@ class Sim:
 		finally: self.rc_menu.grab_release()
 
 	def keyboard(self):
-		if self.use_kb_sfrs:
-			ki = 0xff
-			if len(self.keys_pressed) > 0:
-				self.sim.sfr[0x14] = 2
-				
-				ki_filter = self.sim.sfr[0x42]
-				ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
+		ki = 0xff
+		if len(self.keys_pressed) > 0:
+			self.sim.sfr[0x14] = 2
+			
+			ki_filter = self.sim.sfr[0x42]
+			ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
 
-				try:
-					for val in self.keys_pressed:
-						if val == None: continue
-						if ki_filter & (1 << val[0]): self.stop_mode = False
-						if ko & (1 << val[1]): ki &= ~(1 << val[0])
-				except RuntimeError: pass
+			try:
+				for val in self.keys_pressed:
+					if val == None: continue
+					if ki_filter & (1 << val[0]): self.stop_mode = False
+					if ko & (1 << val[1]): ki &= ~(1 << val[0])
+			except RuntimeError: pass
 
-			self.sim.sfr[0x40] = ki
+		self.sim.sfr[0x40] = ki
+
+		if not config.real_hardware:
+			if self.read_emu_kb(0) in (2, 8) and [self.read_emu_kb(i) for i in (1, 2)] != [1<<2, 1<<4]: self.write_emu_kb(0, 0)
 
 	def sbycon(self):
 		sbycon = self.sim.sfr[9]
@@ -1171,10 +1169,8 @@ class Sim:
 				self.sim.sfr[9] &= ~(1 << 1)
 				self.sim.sfr[0x14] = 0x20
 				if not config.real_hardware:
-					for i in range(3):
-						if config.hardware_id == 0: self.sim.data_mem[0x800 + i] = 0
-						if config.hardware_id in (4, 5): self.sim.rw_seg[0x8e00 + i] = 0
-						else: self.sim.data_mem[0xe00 + i] = 0
+					self.write_emu_kb(1, 0)
+					self.write_emu_kb(2, 0)
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
