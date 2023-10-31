@@ -41,3 +41,8 @@ This emulator uses images extracted from emulators. To get them, you need to ope
 ## fx-92 Collège Emulator Ver.USB
 - For the interface, you need to extract bitmap **8000** from the emulator **DLL**.
 - For the status bar, you need to extract bitmap **136** from the emulator **EXE**.
+
+# ROM8 support
+This frontend supports the ROM8 file format created by [pitust](https://github.com/pitust). See `config.py` for how to set it up.
+
+Note that ROM8 support is currently incomplete.

@@ -1,12 +1,17 @@
 # Configuration file for u8_emu frontend
 
+# * Required if ROM8 mode is disabled. If ROM8 mode is enabled this setting will be overwritten.
+
 # Path to the shared library.
 shared_lib = 'core.so'
 
-# Path to the ROM file.
+# Path to the ROM/ROM8 file.
 rom_file = 'rom.bin'
 
-# Hardware type.
+# ROM8 mode; set to True if a ROM8 file was provided.
+rom8 = False
+
+# Hardware type. *
 # 0 = fx-82SOLAR II
 # 2 = ES
 # 3 = ES PLUS
@@ -14,7 +19,7 @@ rom_file = 'rom.bin'
 # 5 = ClassWiz (Second generation - CW/CWII)
 hardware_id = 3
 
-# Toggle real/emulator ROM mode.
+# Toggle real/emulator ROM mode. *
 real_hardware = False
 
 # KO mode. If omitted or has an invalid value, 0 will be used.
@@ -29,7 +34,7 @@ pd_value = 0
 # Path to the status bar image.
 status_bar_path = 'images/interface_es_bar.png'
 
-# Path to the interface image.
+# Path to the interface image. *
 interface_path = 'images/interface_esp_83gtp.png'
 
 # Settings for the Tkinter window.
@@ -42,7 +47,7 @@ height = 816
 s_width = 288
 s_height = 12
 
-# Name of the Tkinter window.
+# Name of the Tkinter window. *(also required if there is no 'model=' prop in the ROM8 file)
 root_w_name = 'fx-83GT PLUS Emulator'
 
 # "Console" text font.
@@ -159,6 +164,9 @@ keymap = {
 	(1, 6): ((237, 721, 61, 41), '',           ''),
 	(0, 6): ((302, 721, 61, 41), 'return',     ''),
 }
+
+# Keymap: use chars instead of keysyms.
+use_char = False
 
 # Date and time format for logging module.
 dt_format = '%d/%m/%Y %H:%M:%S'

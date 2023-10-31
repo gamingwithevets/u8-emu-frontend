@@ -15,6 +15,7 @@ import tkinter.messagebox
 from enum import IntEnum
 
 from pyu8disas import main as disas_main
+from tool8 import tool8
 import platform
 
 if sys.version_info < (3, 6, 0, 'alpha', 4):
@@ -25,15 +26,33 @@ if pygame.version.vernum < (2, 2, 0):
 	print(f'This program requires at least Pygame 2.2.0. (You are running Pygame {pygame.version.ver})')
 	sys.exit()
 
-
 try:
 	exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
-	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s')
-	else: logging.basicConfig(format = '%(levelname)s: %(message)s')
+	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = logging.INFO)
+	else: logging.basicConfig(format = '%(levelname)s: %(message)s', level = logging.INFO)
 except ImportError as e:
+	logging.basicConfig(format = '%(levelname)s: %(message)s')
 	logging.error(str(e))
 	sys.exit()
 
+# For ROM8 reading
+class DisplayBounds(ctypes.Structure):
+	_fields_ = [
+		('x',      ctypes.c_uint16),
+		('y',      ctypes.c_uint16),
+		('width',  ctypes.c_uint16),
+		('height', ctypes.c_uint16),
+		('scale',  ctypes.c_uint16),
+	]
+
+class GUIKey(ctypes.Structure):
+	_fields_ = [
+		('x',      ctypes.c_uint16),
+		('y',      ctypes.c_uint16),
+		('width',  ctypes.c_uint16),
+		('height', ctypes.c_uint16),
+		('keysym', ctypes.c_uint16),
+	]
 
 # Thanks Delta / @frsr on Discord!
 class u8_core_t(ctypes.Structure):	# Forward definition so pointers can be used
@@ -776,14 +795,48 @@ Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not Non
 
 class Sim:
 	def __init__(self):
+		if config.rom8:
+			tags = list(tool8.read8(config.rom_file))
+			props = {}
+			found_tags = set()
+			for tag, data in tags:
+				if tag in found_tags and tag != 2:
+					logging.error(f'Duplicate tag (type {int(tag)}) found')
+					sys.exit()
+				else: found_tags.add(tag)
+
+				# end
+				if tag == 0: break
+				elif tag == 2:
+					ds = data.decode().split('=', 1)
+					props[ds[0]] = ds[1]
+				elif tag == 3: rom = data
+				elif tag == 4: logging.warning('SVGs not supported')
+				elif tag == 5:
+					name = f'temp{time.time_ns()}.png'
+					with open(name, 'wb') as f: f.write(data)
+					config.interface_path = name
+
+			if 'model' in props: config.root_w_name = props['model']
+			logging.info('ROM8 properties:\n' + '\n'.join([f'{k}: {v}' for k, v in props.items()]))
+		else:
+			rom = open(config.rom_file, 'rb').read()
+			if len(rom) % 2 != 0:
+				logging.error('ROM size cannot be odd')
+				sys.exit()
+
+		self.sim = Core(rom)
+
 		self.root = DebounceTk()
 		self.root.geometry(f'{config.width}x{config.height}')
 		self.root.resizable(False, False)
 		self.root.title(config.root_w_name)
 		self.root.focus_set()
 		
-		rom = open(config.rom_file, 'rb').read()
-		self.sim = Core(rom)
+		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
+		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
+		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
+		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 
 		self.init_sp = rom[0] | rom[1] << 8
 		self.init_pc = rom[2] | rom[3] << 8
@@ -805,10 +858,6 @@ class Sim:
 		embed_pygame.focus_set()
 
 		self.use_kb_sfrs = config.real_hardware
-
-		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
-
-		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
 
 		def press_cb(event):
 			for k, v in config.keymap.items():
@@ -855,10 +904,6 @@ class Sim:
 		sbar_hi = status_bar.get_height()
 		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else sbar_hi))
 		self.status_bar_rect = self.status_bar.get_rect()
-
-		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
-
-		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
 
 		self.disp_lcd = tk.IntVar(value = 0)
 		self.use_kb_sfrs_tk = tk.BooleanVar(value = self.use_kb_sfrs)
@@ -1322,6 +1367,8 @@ class Sim:
 		self.sim.core.regs.dsr = 0
 
 	def exit_sim(self):
+		if config.rom8: os.remove(config.interface_path)
+
 		pygame.quit()
 		self.root.quit()
 		if os.name != 'nt': os.system('xset r on')
