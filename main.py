@@ -847,7 +847,6 @@ class Sim:
 		self.root.focus_set()
 		
 		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
-		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
 		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
 		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 
@@ -917,6 +916,8 @@ class Sim:
 		sbar_hi = status_bar.get_height()
 		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else sbar_hi))
 		self.status_bar_rect = self.status_bar.get_rect()
+		
+		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
 
 		self.disp_lcd = tk.IntVar(value = 0)
 
