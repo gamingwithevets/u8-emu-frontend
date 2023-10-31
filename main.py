@@ -807,15 +807,27 @@ class Sim:
 
 				# end
 				if tag == 0: break
+				# prop
 				elif tag == 2:
 					ds = data.decode().split('=', 1)
 					props[ds[0]] = ds[1]
+				# rom
 				elif tag == 3: rom = data
-				elif tag == 4: logging.warning('SVGs not supported')
+				# faceSVG
+				elif tag == 4:
+					name = f'temp{time.time_ns()}.svg'
+					with open(name, 'wb') as f: f.write(data)
+					config.interface_path = name
+				# facePNG
 				elif tag == 5:
 					name = f'temp{time.time_ns()}.png'
 					with open(name, 'wb') as f: f.write(data)
 					config.interface_path = name
+				# faceDisplayBounds
+				elif tag == 6:
+					config.screen_tl_w = int.from_bytes(data[:2],   'little')
+					config.screen_tl_h = int.from_bytes(data[2:4],  'little')
+					config.pix         = int.from_bytes(data[8:10], 'little')
 
 			if 'model' in props: config.root_w_name = props['model']
 			logging.info('ROM8 properties:\n' + '\n'.join([f'{k}: {v}' for k, v in props.items()]))
@@ -831,6 +843,7 @@ class Sim:
 		self.root.geometry(f'{config.width}x{config.height}')
 		self.root.resizable(False, False)
 		self.root.title(config.root_w_name)
+		self.root.protocol('WM_DELETE_WINDOW', self.exit_sim)
 		self.root.focus_set()
 		
 		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0

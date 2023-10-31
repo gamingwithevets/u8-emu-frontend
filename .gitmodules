@@ -4,3 +4,6 @@
 [submodule "pyu8disas"]
 	path = pyu8disas
 	url = https://github.com/gamingwithevets/pyu8disas.git
+[submodule "tool8"]
+	path = tool8
+	url = https://github.com/pitust/tool8.git

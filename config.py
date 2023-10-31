@@ -65,11 +65,12 @@ pygame_color = (255, 255, 255)
 # Y coordinate of the text.
 text_y = 22
 
-# Top left corner of the screen.
+# Top left corner of the screen. *
 screen_tl_w = 58
 screen_tl_h = 132
 
-# Pixel size. Note that decimal pixel sizes do not look correctly.
+# Pixel size. *
+# Note that decimal pixel sizes do not look correctly.
 pix = 3
 
 # Small pixel size. Only used for fx-82SOLAR II.
