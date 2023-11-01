@@ -1,6 +1,6 @@
 # Configuration file for u8_emu frontend
 
-# * Required if ROM8 mode is disabled. If ROM8 mode is enabled this setting will be overwritten.
+# * Required if ROM8 mode is disabled. If ROM8 mode is enabled this setting may be overwritten.
 
 # Path to the shared library.
 shared_lib = 'core.so'
@@ -39,7 +39,7 @@ interface_path = 'images/interface_esp_83gtp.png'
 
 # Settings for the Tkinter window.
 
-# Width and height of the Pygame embed widget and interface image.
+# Width and height of the Pygame embed widget and interface image. (optional)
 width = 405
 height = 816
 
@@ -166,7 +166,7 @@ keymap = {
 	(0, 6): ((302, 721, 61, 41), 'return',     ''),
 }
 
-# Keymap: use chars instead of keysyms.
+# Keymap: use chars instead of keysyms. *
 use_char = False
 
 # Date and time format for logging module.

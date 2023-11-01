@@ -1,10 +1,13 @@
+import io
 import os
+import PIL.Image
 import sys
 import math
 import time
 import ctypes
 import pygame
 import logging
+import cairosvg
 import functools
 import threading
 import traceback
@@ -52,6 +55,12 @@ class GUIKey(ctypes.Structure):
 		('width',  ctypes.c_uint16),
 		('height', ctypes.c_uint16),
 		('keysym', ctypes.c_uint16),
+	]
+
+class Keybind(ctypes.Structure):
+	_fields_ = [
+		('key', ctypes.c_char),
+		('keysym', ctypes.c_uint8),
 	]
 
 # Thanks Delta / @frsr on Discord!
@@ -798,7 +807,9 @@ class Sim:
 		if config.rom8:
 			tags = list(tool8.read8(config.rom_file))
 			props = {}
+			keymap = {}
 			found_tags = set()
+			
 			for tag, data in tags:
 				if tag in found_tags and tag != 2:
 					logging.error(f'Duplicate tag (type {int(tag)}) found')
@@ -813,22 +824,49 @@ class Sim:
 					props[ds[0]] = ds[1]
 				# rom
 				elif tag == 3: rom = data
-				# faceSVG
-				elif tag == 4:
-					name = f'temp{time.time_ns()}.svg'
-					with open(name, 'wb') as f: f.write(data)
-					config.interface_path = name
-				# facePNG
-				elif tag == 5:
+				# faceSVG / facePNG
+				elif tag in (4, 5):
+					if tag == 4 and 5 in found_tags:
+						logging.error('facePNG tag already used')
+						sys.exit()
+					elif tag == 5 and 4 in found_tags:
+						logging.error('faceSVG tag already used')
+						sys.exit()
+
+					if tag == 4: data = cairosvg.svg2png(bytestring = data)
+					
 					name = f'temp{time.time_ns()}.png'
 					with open(name, 'wb') as f: f.write(data)
 					config.interface_path = name
+
 				# faceDisplayBounds
 				elif tag == 6:
-					config.screen_tl_w = int.from_bytes(data[:2],   'little')
-					config.screen_tl_h = int.from_bytes(data[2:4],  'little')
-					config.pix         = int.from_bytes(data[8:10], 'little')
+					facedisp = DisplayBounds.from_buffer_copy(data)
+					config.screen_tl_w = facedisp.x
+					config.screen_tl_h = facedisp.y
+					config.pix         = facedisp.scale
+				elif tag == 7:
+					for i in range(0, len(data), 10):
+						key = GUIKey.from_buffer_copy(data[i:i+10])
+						kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
+						if kio in keymap: keymap[kio][0] = (key.x, key.y, key.width, key.height)
+						else: keymap[kio] = [(key.x, key.y, key.width, key.height)]
+				elif tag == 9:
+					calctype = data[0]
+					if calctype & 3 == 1: config.hardware_id = 3
+					elif calctype & 3 == 2: config.hardware_id = 4
+					elif calctype & 3 == 3: config.hardware_id = 5
+					config.real_hardware = calctype & 0xfc != 4
+				elif tag == 10:
+					config.use_char = True
+					for i in range(0, len(data), 2):
+						key = Keybind.from_buffer_copy(data[i:i+2])
+						if ord(key.key) < 0x80:
+							kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
+							if kio not in keymap: keymap[kio] = [(0, 0, 0, 0)]
+							keymap[kio].append(key)
 
+			if keymap != {}: config.keymap = keymap
 			if 'model' in props: config.root_w_name = props['model']
 			logging.info('ROM8 properties:\n' + '\n'.join([f'{k}: {v}' for k, v in props.items()]))
 		else:
@@ -836,6 +874,11 @@ class Sim:
 			if len(rom) % 2 != 0:
 				logging.error('ROM size cannot be odd')
 				sys.exit()
+
+		im = PIL.Image.open(config.interface_path)
+		size = im.size
+		if not hasattr(config, 'width'):  config.width  = size[0]
+		if not hasattr(config, 'height'): config.height = size[1]
 
 		self.sim = Core(rom)
 
@@ -873,7 +916,7 @@ class Sim:
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-				or (event.type == tk.EventType.KeyPress and event.keysym.lower() in v[1:]):
+				or (event.type == tk.EventType.KeyPress and (event.char if config.use_char else event.keysym).lower() in v[1:]):
 					self.keys_pressed.add(k)
 					if k is None: self.reset_core(False)
 					else:
@@ -890,7 +933,7 @@ class Sim:
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-					or (event.type == tk.EventType.KeyRelease and event.keysym.lower() in v[1:]):
+					or (event.type == tk.EventType.KeyRelease and (event.char if config.use_char else event.keysym).lower() in v[1:]):
 						try: self.keys_pressed.remove(k)
 						except KeyError:
 							self.keys_pressed.clear()
@@ -916,7 +959,7 @@ class Sim:
 		sbar_hi = status_bar.get_height()
 		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else sbar_hi))
 		self.status_bar_rect = self.status_bar.get_rect()
-		
+
 		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
 
 		self.disp_lcd = tk.IntVar(value = 0)
@@ -937,12 +980,12 @@ class Sim:
 		self.rc_menu.add_separator()
 
 		self.screen_stuff = {
-		# hwid: (alloc, used, rows, buffers, columns)
-			0: (0x8,  0x8,  4,    [], 0x40),
-			2: (0x10, 0xc,  0x20, [0x8600], 96),
-			3: (0x10, 0xc,  0x20, [0x87d0], 96),
-			4: (0x20, 0x18, 0x40, [0xddd4, 0xe3d4], 192),
-			5: (0x20, 0x18, 0x40, [0xca54, 0xd654], 192),
+	   # hwid: (alloc, used, rows, buffers,          columns)
+			0: (0x8,   0x8,  4,    [],               0x40),
+			2: (0x10,  0xc,  0x20, [0x8600],         96),
+			3: (0x10,  0xc,  0x20, [0x87d0],         96),
+			4: (0x20,  0x18, 0x40, [0xddd4, 0xe3d4], 192),
+			5: (0x20,  0x18, 0x40, [0xca54, 0xd654], 192),
 		}
 
 		# first item can be anything
@@ -1385,8 +1428,6 @@ class Sim:
 		sys.exit()
 
 	def pygame_loop(self):
-		self.screen.fill((0, 0, 0))
-
 		if self.single_step and self.step: self.core_step()
 		if (self.single_step and self.step) or not self.single_step:
 			self.reg_display.print_regs()
@@ -1394,7 +1435,7 @@ class Sim:
 
 		self.clock.tick()
 
-		self.screen.fill((0, 0, 0))
+		self.screen.fill((214, 227, 214))
 		self.screen.blit(self.interface, self.interface_rect)
 		try:
 			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGBA_ADD)
