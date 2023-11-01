@@ -8,7 +8,7 @@ shared_lib = 'core.so'
 # Path to the ROM/ROM8 file.
 rom_file = 'rom.bin'
 
-# ROM8 mode; set to True if a ROM8 file was provided.
+# ROM8 mode; set to True if a ROM8 file was provided. (optional; default = False)
 rom8 = False
 
 # Hardware type. *

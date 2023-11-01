@@ -809,7 +809,7 @@ class Sim:
 		if not hasattr(config, 's_width'):  config.s_width  = size[0]
 		if not hasattr(config, 's_height'): config.s_height = size[1]
 
-		if config.rom8:
+		if hasattr(config, 'rom8') and config.rom8:
 			tags = list(tool8.read8(config.rom_file))
 			props = {}
 			keymap = {}
