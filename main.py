@@ -809,7 +809,10 @@ class Sim:
 		if not hasattr(config, 's_width'):  config.s_width  = size[0]
 		if not hasattr(config, 's_height'): config.s_height = size[1]
 
-		if hasattr(config, 'rom8') and config.rom8:
+		self.rom8 = config.rom8 if hasattr(config, 'rom8') else False
+		self.use_char = config.use_char if hasattr(config, 'use_char') else False
+
+		if self.rom8:
 			tags = list(tool8.read8(config.rom_file))
 			props = {}
 			keymap = {}
@@ -870,7 +873,7 @@ class Sim:
 				
 				# faceKeybinds
 				elif tag == 10:
-					config.use_char = True
+					self.use_char = True
 					for i in range(0, len(data), 2):
 						key = Keybind.from_buffer_copy(data[i:i+2])
 						if ord(key.key) < 0x80 or ord(key.key) == 0xfb:
@@ -929,7 +932,7 @@ class Sim:
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-				or (event.type == tk.EventType.KeyPress and (event.char if config.use_char else event.keysym.lower()) in v[1:]):
+				or (event.type == tk.EventType.KeyPress and (event.char if self.use_char else event.keysym.lower()) in v[1:]):
 					self.keys_pressed.add(k)
 					if k is None: self.reset_core()
 					else:
@@ -946,7 +949,7 @@ class Sim:
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-					or (event.type == tk.EventType.KeyRelease and (event.char if config.use_char else event.keysym.lower()) in v[1:]):
+					or (event.type == tk.EventType.KeyRelease and (event.char if self.use_char else event.keysym.lower()) in v[1:]):
 						try:
 							self.keys_pressed.remove(k)
 							return
@@ -1429,7 +1432,7 @@ class Sim:
 		self.sim.core.regs.dsr = 0
 
 	def exit_sim(self):
-		if config.rom8: os.remove(config.interface_path)
+		if self.rom8: os.remove(config.interface_path)
 
 		pygame.quit()
 		self.root.quit()
