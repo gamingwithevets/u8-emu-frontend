@@ -804,6 +804,11 @@ Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not Non
 
 class Sim:
 	def __init__(self):
+		im = PIL.Image.open(config.status_bar_path)
+		size = im.size
+		if not hasattr(config, 's_width'):  config.s_width  = size[0]
+		if not hasattr(config, 's_height'): config.s_height = size[1]
+
 		if config.rom8:
 			tags = list(tool8.read8(config.rom_file))
 			props = {}
@@ -843,28 +848,36 @@ class Sim:
 				elif tag == 6:
 					facedisp = DisplayBounds.from_buffer_copy(data)
 					config.screen_tl_w = facedisp.x
-					config.screen_tl_h = facedisp.y
+					config.screen_tl_h = facedisp.y - config.s_height + 1
 					config.pix         = facedisp.scale
+				
+				# faceGUIKeys
 				elif tag == 7:
 					for i in range(0, len(data), 10):
 						key = GUIKey.from_buffer_copy(data[i:i+10])
-						kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
+						if key.keysym == 0xfe: kio = None
+						else: kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
 						if kio in keymap: keymap[kio][0] = (key.x, key.y, key.width, key.height)
 						else: keymap[kio] = [(key.x, key.y, key.width, key.height)]
+				
+				# calcType
 				elif tag == 9:
 					calctype = data[0]
 					if calctype & 3 == 1: config.hardware_id = 3
 					elif calctype & 3 == 2: config.hardware_id = 4
 					elif calctype & 3 == 3: config.hardware_id = 5
 					config.real_hardware = calctype & 0xfc != 4
+				
+				# faceKeybinds
 				elif tag == 10:
 					config.use_char = True
 					for i in range(0, len(data), 2):
 						key = Keybind.from_buffer_copy(data[i:i+2])
-						if ord(key.key) < 0x80:
+						if ord(key.key) < 0x80 or ord(key.key) == 0xfb:
+							if key.keysym: kio = None
 							kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
 							if kio not in keymap: keymap[kio] = [(0, 0, 0, 0)]
-							keymap[kio].append(key)
+							keymap[kio].append(key.key.decode())
 
 			if keymap != {}: config.keymap = keymap
 			if 'model' in props: config.root_w_name = props['model']
@@ -916,9 +929,9 @@ class Sim:
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-				or (event.type == tk.EventType.KeyPress and (event.char if config.use_char else event.keysym).lower() in v[1:]):
+				or (event.type == tk.EventType.KeyPress and (event.char if config.use_char else event.keysym.lower()) in v[1:]):
 					self.keys_pressed.add(k)
-					if k is None: self.reset_core(False)
+					if k is None: self.reset_core()
 					else:
 						if not config.real_hardware:
 							self.stop_mode = False
@@ -933,11 +946,14 @@ class Sim:
 			for k, v in config.keymap.items():
 				p = v[0]
 				if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-					or (event.type == tk.EventType.KeyRelease and (event.char if config.use_char else event.keysym).lower() in v[1:]):
-						try: self.keys_pressed.remove(k)
-						except KeyError:
-							self.keys_pressed.clear()
+					or (event.type == tk.EventType.KeyRelease and (event.char if config.use_char else event.keysym.lower()) in v[1:]):
+						try:
+							self.keys_pressed.remove(k)
 							return
+						except KeyError: break
+
+			self.keys_pressed.clear()
+			return
 
 		embed_pygame.bind('<KeyPress>', press_cb)
 		embed_pygame.bind('<KeyRelease>', release_cb)
@@ -954,13 +970,10 @@ class Sim:
 		self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
 		self.interface_rect = self.interface.get_rect()
 
-		status_bar = pygame.image.load(config.status_bar_path)
-		sbar_w = status_bar.get_width()
-		sbar_hi = status_bar.get_height()
-		self.status_bar = pygame.transform.scale(status_bar, (config.s_width if hasattr(config, 's_width') else sbar_w, config.s_height if hasattr(config, 's_height') else sbar_hi))
+		self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
 		self.status_bar_rect = self.status_bar.get_rect()
 
-		self.sbar_hi = config.s_height if hasattr(config, 's_height') else sbar_hi
+		self.sbar_hi = config.s_height
 
 		self.disp_lcd = tk.IntVar(value = 0)
 
@@ -1002,8 +1015,6 @@ class Sim:
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
 		
 		self.rc_menu.add_separator()
-		self.rc_menu.add_command(label = 'Reset core', accelerator = 'C', command = self.reset_core)
-		self.rc_menu.add_separator()
 
 		extra_funcs = tk.Menu(self.rc_menu, tearoff = 0)
 		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
@@ -1011,7 +1022,7 @@ class Sim:
 		extra_funcs.add_command(label = 'Modify general registers', command = self.gp_modify.open)
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		self.rc_menu.add_separator()
-		self.rc_menu.add_command(label = 'Quit', accelerator = 'Q', command = self.exit_sim)
+		self.rc_menu.add_command(label = 'Quit', command = self.exit_sim)
 
 		self.root.bind('<Button-3>', self.open_popup)
 		self.root.bind('\\', lambda x: self.set_step())
@@ -1023,8 +1034,6 @@ class Sim:
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.reg_display.open())
 		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
-		self.bind_('c', lambda x: self.reset_core())
-		self.bind_('q', lambda x: self.exit_sim())
 
 		self.single_step = True
 		self.ok = True
@@ -1060,7 +1069,8 @@ class Sim:
 		else: self.sim.data_mem[0xe00 + idx] = val & 0xff
 
 	def run(self):
-		self.reset_core(False)
+		self.reset_core()
+		self.set_single_step(False)
 		self.pygame_loop()
 
 		if os.name != 'nt': os.system('xset r off')
@@ -1394,10 +1404,9 @@ class Sim:
 
 		return screen_data_status_bar, screen_data
 
-	def reset_core(self, single_step = True):
+	def reset_core(self):
 		self.core_reset()
 		self.prev_csr_pc = None
-		self.set_single_step(single_step)
 		self.reg_display.print_regs()
 		self.data_mem.get_mem()
 
