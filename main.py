@@ -858,7 +858,7 @@ class Sim:
 				elif tag == 7:
 					for i in range(0, len(data), 10):
 						key = GUIKey.from_buffer_copy(data[i:i+10])
-						if key.keysym == 0xfe: kio = None
+						if key.keysym == 0x80: kio = None
 						else: kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
 						if kio in keymap: keymap[kio][0] = (key.x, key.y, key.width, key.height)
 						else: keymap[kio] = [(key.x, key.y, key.width, key.height)]
@@ -876,11 +876,10 @@ class Sim:
 					self.use_char = True
 					for i in range(0, len(data), 2):
 						key = Keybind.from_buffer_copy(data[i:i+2])
-						if ord(key.key) < 0x80 or ord(key.key) == 0xfb:
-							if key.keysym: kio = None
-							kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
-							if kio not in keymap: keymap[kio] = [(0, 0, 0, 0)]
-							keymap[kio].append(key.key.decode())
+						if key.keysym == 0x80: kio = None
+						kio = (key.keysym >> 4 & 0xf, key.keysym & 0xf)
+						if kio not in keymap: keymap[kio] = [(0, 0, 0, 0)]
+						keymap[kio].append(key.key.decode())
 
 			if keymap != {}: config.keymap = keymap
 			if 'model' in props: config.root_w_name = props['model']
