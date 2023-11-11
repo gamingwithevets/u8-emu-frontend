@@ -1230,7 +1230,6 @@ class Sim:
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
-		prev_dsr = self.sim.core.regs.dsr
 
 		if not self.stop_mode:
 			self.ok = False
@@ -1256,7 +1255,6 @@ class Sim:
 			self.ips_ctr += 1
 
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step:
-				tk.messagebox.showinfo('Breakpoint hit!', f'Breakpoint {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H has been hit!')
 				self.set_single_step(True)
 				self.reg_display.open()
 				self.keys_pressed.clear()
