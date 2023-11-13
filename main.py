@@ -679,7 +679,7 @@ class DataMem(tk.Toplevel):
 			line = ''
 			line_ascii = ''
 			for byte in data[i-addr:i-addr+16]: line += f'{byte:02X} '; line_ascii += chr(byte) if byte in range(0x20, 0x7f) else '.'
-			lines[j] = f'{seg:02X}:{i % 0x10000:04X}  {line}  {line_ascii}'
+			lines[j] = f'{seg:02}:{i % 0x10000:04X}H  {line}  {line_ascii}'
 			j += 1
 		return '\n'.join(lines.values())
 
@@ -794,6 +794,7 @@ EPSW3           {regs.epsw[2]:02X}
 
 Other information:
 Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
+STOP acceptor            1 [{'x' if self.sim.stop_accept[0] else ' '}]  2 [{'x' if  self.sim.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None'}\
 '''
@@ -1230,6 +1231,7 @@ class Sim:
 
 	def core_step(self):
 		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
+		prev_sbycon = self.sim.sfr[9]
 
 		if not self.stop_mode:
 			self.ok = False
@@ -1240,8 +1242,9 @@ class Sim:
 
 			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
-				if stpacp & 0xa0 == 0xa0 and not self.stop_accept[1]: self.stop_accept[1] = True
-				elif stpacp & 0x50 != 0x50: self.stop_accept[0] = False
+				if not self.stop_accept[1]:
+					if stpacp & 0xa0 == 0xa0: self.stop_accept[1] = True
+					elif stpacp & 0x50 != 0x50: self.stop_accept[0] = False
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
 
 			self.ok = True
