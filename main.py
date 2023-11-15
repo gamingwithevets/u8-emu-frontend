@@ -29,12 +29,14 @@ if pygame.version.vernum < (2, 2, 0):
 	print(f'This program requires at least Pygame 2.2.0. (You are running Pygame {pygame.version.ver})')
 	sys.exit()
 
+level = logging.DEBUG
+
 try:
 	exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
-	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = logging.INFO)
-	else: logging.basicConfig(format = '%(levelname)s: %(message)s', level = logging.INFO)
+	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level)
+	else: logging.basicConfig(format = '%(levelname)s: %(message)s', level = level)
 except ImportError as e:
-	logging.basicConfig(format = '%(levelname)s: %(message)s')
+	logging.basicConfig(format = '%(levelname)s: %(message)s', level = level)
 	logging.error(str(e))
 	sys.exit()
 
@@ -175,7 +177,7 @@ sim_lib.write_mem_code.restype = None
 ##
 
 class Core:
-	def __init__(self, rom):
+	def __init__(self, rom, ko_mode):
 		self.core = u8_core_t()
 
 		# Initialise memory
@@ -196,6 +198,11 @@ class Core:
 		5: (0x9000, 0x6000),
 		}
 
+		self.known_sfrs = [8, 9, 0x10, 0x11, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23, 0x25, 0x30, 0x31, 0x32, 0x33, 0x40, 0x44 if ko_mode else 0x46, 0x50]
+		if config.hardware_id == 0: self.known_sfrs.extend(list(range(0x800, 0x820)))
+		elif config.hardware_id in (4, 5): self.known_sfrs.extend(list(range(0x800, 0x1000)))
+		else: self.known_sfrs.extend(list(range(0x800, 0xa00)))
+
 		self.sdata = data_size[config.hardware_id if config.hardware_id in data_size else 3]
 
 		self.data_mem = (ctypes.c_uint8 * self.sdata[1])()
@@ -204,14 +211,15 @@ class Core:
 
 		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
-		blank_code_mem_fp = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
-		blank_code_mem_f = blank_code_mem_fp(self.blank_code_mem)
+		blank_code_mem_f = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)(self.blank_code_mem)
+		read_sfr_f = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)(self.read_sfr)
+		write_sfr_f = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)(self.write_sfr)
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,       len(rom) - 1,                    u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata),                 u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.sfr, 0x00000))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_sfr_f, write_sfr_f))),
 		]
 
 		if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
@@ -237,6 +245,7 @@ class Core:
 		self.core.regs.sp = rom[0] | rom[1] << 8
 		self.core.regs.pc = rom[2] | rom[3] << 8
 	
+
 	def u8_step(self):
 		sim_lib.u8_step(ctypes.pointer(self.core))
 	
@@ -279,6 +288,14 @@ class Core:
 		return sim_lib.write_mem_code(ctypes.pointer(self.core), dsr, offset, size, value)
 
 	def blank_code_mem(self, core, seg, addr): return 0xff
+
+	def write_sfr(self, core, seg, addr, value):
+		if addr not in self.known_sfrs: logging.debug(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+		self.sfr[addr] = value
+
+	def read_sfr(self, core, seg, addr):
+		if addr not in self.known_sfrs: logging.debug(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+		return self.sfr[addr]
 
 # https://github.com/JamesGKent/python-tkwidgets/blob/master/Debounce.py
 class Debounce():
@@ -812,6 +829,9 @@ class Sim:
 
 		self.rom8 = config.rom8 if hasattr(config, 'rom8') else False
 		self.use_char = config.use_char if hasattr(config, 'use_char') else False
+		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
+		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
+		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 
 		if self.rom8:
 			tags = list(tool8.read8(config.rom_file))
@@ -896,7 +916,7 @@ class Sim:
 		if not hasattr(config, 'width'):  config.width  = size[0]
 		if not hasattr(config, 'height'): config.height = size[1]
 
-		self.sim = Core(rom)
+		self.sim = Core(rom, self.ko_mode)
 
 		self.root = DebounceTk()
 		self.root.geometry(f'{config.width}x{config.height}')
@@ -904,10 +924,6 @@ class Sim:
 		self.root.title(config.root_w_name)
 		self.root.protocol('WM_DELETE_WINDOW', self.exit_sim)
 		self.root.focus_set()
-		
-		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
-		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
-		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 
 		self.init_sp = rom[0] | rom[1] << 8
 		self.init_pc = rom[2] | rom[3] << 8
@@ -1230,7 +1246,7 @@ class Sim:
 					self.write_emu_kb(2, 0)
 
 	def core_step(self):
-		self.prev_csr_pc = f"{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H"
+		self.prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		prev_sbycon = self.sim.sfr[9]
 
 		if not self.stop_mode:
