@@ -7,7 +7,6 @@ import time
 import ctypes
 import pygame
 import logging
-import cairosvg
 import functools
 import threading
 import traceback
@@ -862,7 +861,13 @@ class Sim:
 						logging.error('faceSVG tag already used')
 						sys.exit()
 
-					if tag == 4: data = cairosvg.svg2png(bytestring = data)
+					if tag == 4:
+						try: import cairosvg
+						except Exception:
+							logging.error(f'CairoSVG threw an error during import.\n{traceback.format_exc()}')
+							sys.exit()
+
+						data = cairosvg.svg2png(bytestring = data)
 					
 					name = f'temp{time.time_ns()}.png'
 					with open(name, 'wb') as f: f.write(data)
