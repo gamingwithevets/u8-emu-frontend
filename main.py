@@ -197,7 +197,7 @@ class Core:
 		5: (0x9000, 0x6000),
 		}
 
-		self.known_sfrs = [8, 9, 0xa, 0x10, 0x11, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x30, 0x31, 0x32, 0x33, 0x40, 0x44 if ko_mode else 0x46, 0x50, 0x310]
+		self.known_sfrs = [0, 8, 9, 0xa, 0x10, 0x11, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x30, 0x31, 0x32, 0x33, 0x40, 0x44 if ko_mode else 0x46, 0x50, 0x310]
 		if config.hardware_id == 0: self.known_sfrs.extend(list(range(0x800, 0x820)))
 		elif config.hardware_id in (4, 5): self.known_sfrs.extend(list(range(0x800, 0x1000)))
 		else: self.known_sfrs.extend(list(range(0x800, 0xa00)))
@@ -246,6 +246,7 @@ class Core:
 	
 
 	def u8_step(self):
+		self.sfr[0] = self.core.regs.dsr
 		sim_lib.u8_step(ctypes.pointer(self.core))
 	
 	# Register Access
@@ -291,10 +292,11 @@ class Core:
 	def write_sfr(self, core, seg, addr, value):
 		if addr not in self.known_sfrs: logging.debug(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
 		self.sfr[addr] = value
+		if addr == 0: self.core.regs.dsr = value
 
 	def read_sfr(self, core, seg, addr):
 		if addr not in self.known_sfrs: logging.debug(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
-		return self.sfr[addr]
+		return self.core.regs.dsr if addr == 0 else self.sfr[addr]
 
 # https://github.com/JamesGKent/python-tkwidgets/blob/master/Debounce.py
 class Debounce():
@@ -1251,7 +1253,7 @@ class Sim:
 					self.write_emu_kb(2, 0)
 
 	def core_step(self):
-		self.prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
+		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		prev_sbycon = self.sim.sfr[9]
 
 		if not self.stop_mode:
@@ -1260,6 +1262,8 @@ class Sim:
 			except Exception as e: pass
 			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id in (2, 3) else 0x10
 			self.sim.core.regs.pc &= 0xfffe
+
+			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
 			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
