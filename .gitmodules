@@ -1,6 +1,6 @@
 [submodule "u8_emu"]
 	path = u8_emu
-	url = https://github.com/Fraserbc/u8_emu
+	url = https://github.com/pitust/u8_emu
 [submodule "pyu8disas"]
 	path = pyu8disas
 	url = https://github.com/gamingwithevets/pyu8disas.git

@@ -1,4 +1,5 @@
-This is a **frontend** for [Fraser Price / Fraserbc / Delta](https://github.com/Fraserbc)'s [u8_emu](https://github.com/Fraserbc/u8_emu) emulator written in Python. 
+This is a **frontend** for [Fraser Price / Fraserbc / Delta](https://github.com/Fraserbc)'s [u8_emu](https://github.com/Fraserbc/u8_emu) emulator core, written in Python.  
+**NOTE:** This frontend uses a **fork** of the aforementioned emulator core by [pitust](https://github.com/Fraserbc).  
 Most of the code was based on the [SimU8 frontend](https://github.com/gamingwithevets/simu8-frontend).
 
 This frontend serves as a replacement to Delta's own frontend that uses `ncurses`.
