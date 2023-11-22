@@ -589,7 +589,42 @@ class Brkpoint(tk.Toplevel):
 
 	def clear_brkpoint(self):
 		self.sim.breakpoint = None
+		self.sim.write_brkpoint = None
 		self.sim.reg_display.print_regs()
+
+class WriteBrkpoint(tk.Toplevel):
+	def __init__(self, sim):
+		super(WriteBrkpoint, self).__init__()
+		self.sim = sim
+
+		self.withdraw()
+		self.geometry('300x125')
+		self.resizable(False, False)
+		self.title('Set breakpoint')
+		self.protocol('WM_DELETE_WINDOW', self.withdraw)
+		self.vh_reg = self.register(self.sim.validate_hex)
+		ttk.Label(self, text = 'Single-step mode will be activated there is a write\nto the specified address. 1 write breakpoint at a time.\n(please input hex bytes)', justify = 'center').pack()
+		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
+		ttk.Label(self.csr, text = 'Segment').pack(side = 'left')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.csr_entry.pack(side = 'right')
+		self.csr_entry.insert(0, '0')
+		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
+		ttk.Label(self.pc, text = 'Address').pack(side = 'left')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
+		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
+		self.bind('<Return>', lambda x: self.set_brkpoint())
+		self.bind('<Escape>', lambda x: self.withdraw())
+
+	def set_brkpoint(self):
+		csr_entry = self.csr_entry.get()
+		pc_entry = self.pc_entry.get()
+		if csr_entry == '' or pc_entry == '': return
+		self.sim.write_brkpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
+		self.sim.reg_display.print_regs()
+		self.withdraw()
+
+		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
+		self.pc_entry.delete(0, 'end')
 
 class Write(tk.Toplevel):
 	def __init__(self, sim):
@@ -826,7 +861,8 @@ EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
 Other information:
-Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
+Breakpoint               {format(self.sim.breakpoint >> 16, '02') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
+Write breakpoint         {format(self.sim.write_brkpoint >> 16, '02X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[0] else ' '}]  2 [{'x' if  self.sim.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None'}\
@@ -956,6 +992,7 @@ class Sim:
 
 		self.jump = Jump(self)
 		self.brkpoint = Brkpoint(self)
+		self.write_brkpoint = WriteBrkpoint(self)
 		self.write = Write(self)
 		self.data_mem = DataMem(self)
 		self.gp_modify = GPModify(self)
@@ -1026,7 +1063,8 @@ class Sim:
 		self.rc_menu.add_command(label = 'Jump to...', accelerator = 'J', command = self.jump.deiconify)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Set breakpoint to...', accelerator = 'B', command = self.brkpoint.deiconify)
-		self.rc_menu.add_command(label = 'Clear breakpoint', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
+		self.rc_menu.add_command(label = 'Set write breakpoint to...', accelerator = 'B', command = self.write_brkpoint.deiconify)
+		self.rc_menu.add_command(label = 'Clear breakpoints', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
 		self.rc_menu.add_separator()
@@ -1080,6 +1118,7 @@ class Sim:
 		self.ok = True
 		self.step = False
 		self.breakpoint = None
+		self.write_brkpoint = None
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
@@ -1269,9 +1308,9 @@ class Sim:
 
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
-		prev_sbycon = self.sim.sfr[9]
-
 		if not self.stop_mode:
+			if self.write_brkpoint != None: addr_write = self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16)
+
 			self.ok = False
 			try: self.sim.u8_step()
 			except Exception as e: pass
@@ -1298,6 +1337,11 @@ class Sim:
 			self.ips_ctr += 1
 
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step:
+				self.set_single_step(True)
+				self.reg_display.open()
+				self.keys_pressed.clear()
+
+			if self.write_brkpoint != None and self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16) != addr_write:
 				self.set_single_step(True)
 				self.reg_display.open()
 				self.keys_pressed.clear()
