@@ -237,11 +237,13 @@ class Core:
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			))
-		elif config.hardware_id == 5: regions.extend((
+		elif config.hardware_id == 5:
+			regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
 			))
+
 		else: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -751,7 +753,7 @@ class DataMem(tk.Toplevel):
 			line = ''
 			line_ascii = ''
 			for byte in data[i-addr:i-addr+16]: line += f'{byte:02X} '; line_ascii += chr(byte) if byte in range(0x20, 0x7f) else '.'
-			lines[j] = f'{seg:02}:{i % 0x10000:04X}H  {line}  {line_ascii}'
+			lines[j] = f'{seg:02}:{i % 0x10000:04X}H {line}  {line_ascii}'
 			j += 1
 		return '\n'.join(lines.values())
 
@@ -1208,7 +1210,7 @@ class Sim:
 
 	def calc_checksum(self):
 		csum = 0
-		if config.hardware_id in (2, 3):
+		if config.hardware_id == 3:
 			version = self.read_dmem_bytes(0xfff4, 6, 1).decode()
 			rev = self.read_dmem_bytes(0xfffa, 2, 1).decode()
 			csum1 = self.read_dmem(0xfffc, 2, 1)
@@ -1228,8 +1230,22 @@ class Sim:
 			
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
+		elif config.hardware_id == 5:
+			version = self.read_dmem_bytes(0x1fee, 6, 7).decode()
+			rev = self.read_dmem_bytes(0x1ff4, 2, 7).decode()
+			csum1 = self.read_dmem(0x1ff6, 2, 7)
+			for i in range(0, 0xfc00, 2): csum -= self.read_dmem(i, 2, 8)
+			for i in range(0, 0x10000, 2): csum -= self.read_dmem(i, 2, 1)
+			for i in range(0, 0x10000, 2): csum -= self.read_dmem(i, 2, 2)
+			for i in range(0, 0x10000, 2): csum -= self.read_dmem(i, 2, 3)
+			for i in range(0, 0x10000, 2): csum -= self.read_dmem(i, 2, 4)
+			for i in range(0, 0xe000, 2): csum -= self.read_dmem(i, 2, 5)
+			for i in range(0, 0x1ff6, 2): csum -= self.read_dmem(i, 2, 7)
+			
+			csum %= 0x10000
+			text = f'{version}\nV.{rev} Bt OK\nSUM{csum:04X} {"OK" if csum == csum1 else "NG"}'
 		else:
-			tk.messagebox.showinfo('ROM info only supports ES PLUS and CWI.')
+			tk.messagebox.showinfo('ROM info only supports ES PLUS, CWI and CWII.')
 			return
 		
 		tk.messagebox.showinfo('ROM info', text)
