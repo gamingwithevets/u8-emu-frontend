@@ -28,7 +28,7 @@ if pygame.version.vernum < (2, 2, 0):
 	print(f'This program requires at least Pygame 2.2.0. (You are running Pygame {pygame.version.ver})')
 	sys.exit()
 
-level = logging.DEBUG
+level = logging.INFO
 
 try:
 	exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
@@ -197,7 +197,7 @@ class Core:
 		5: (0x9000, 0x6000),
 		}
 
-		self.known_sfrs = [0, 8, 9, 0xa, 0x10, 0x11, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x30, 0x31, 0x32, 0x33, 0x40, 0x44 if ko_mode else 0x46, 0x50, 0x310]
+		self.known_sfrs = [0, 8, 9, 0xa, 0x10, 0x11, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x30, 0x31, 0x32, 0x33, 0x40, 0x42, 0x44 if ko_mode else 0x46, 0x50, 0x310]
 		if config.hardware_id == 0: self.known_sfrs.extend(list(range(0x800, 0x820)))
 		elif config.hardware_id in (4, 5): self.known_sfrs.extend(list(range(0x800, 0x1000)))
 		else: self.known_sfrs.extend(list(range(0x800, 0xa00)))
@@ -210,15 +210,21 @@ class Core:
 
 		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
-		blank_code_mem_f = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)(self.blank_code_mem)
-		read_sfr_f = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)(self.read_sfr)
-		write_sfr_f = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)(self.write_sfr)
+		read_functype = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
+		write_functype = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
+
+		blank_code_mem_f = read_functype(self.blank_code_mem)
+		read_sfr_f = read_functype(self.read_sfr)
+		write_sfr_f = write_functype(self.write_sfr)
+		read_dsr_f = read_functype(self.read_dsr)
+		write_dsr_f = write_functype(self.write_dsr)
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,       len(rom) - 1,                    u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata),                 u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_sfr_f, write_sfr_f))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0F000,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_dsr_f, write_dsr_f))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F001, 0x0FFFF,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_sfr_f, write_sfr_f))),
 		]
 
 		if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
@@ -290,13 +296,22 @@ class Core:
 	def blank_code_mem(self, core, seg, addr): return 0xff
 
 	def write_sfr(self, core, seg, addr, value):
-		if addr not in self.known_sfrs: logging.debug(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+		addr += 1
+
+		if addr not in self.known_sfrs: logging.warning(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
 		self.sfr[addr] = value
-		if addr == 0: self.core.regs.dsr = value
 
 	def read_sfr(self, core, seg, addr):
-		if addr not in self.known_sfrs: logging.debug(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
-		return self.core.regs.dsr if addr == 0 else self.sfr[addr]
+		addr += 1
+
+		if addr not in self.known_sfrs: logging.warning(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+		return self.sfr[addr]
+
+	def write_dsr(self, core, seg, addr, value):
+		self.sfr[0] = value
+		self.core.regs.dsr = value
+
+	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
 
 # https://github.com/JamesGKent/python-tkwidgets/blob/master/Debounce.py
 class Debounce():
