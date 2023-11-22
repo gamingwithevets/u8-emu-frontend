@@ -176,7 +176,10 @@ sim_lib.write_mem_code.restype = None
 ##
 
 class Core:
-	def __init__(self, rom, ko_mode):
+	def __init__(self, sim, rom):
+		self.sim = sim
+		ko_mode = self.sim.ko_mode
+
 		self.core = u8_core_t()
 
 		# Initialise memory
@@ -236,6 +239,7 @@ class Core:
 			))
 		elif config.hardware_id == 5: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
 			))
 		else: regions.extend((
@@ -298,13 +302,13 @@ class Core:
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
 
-		if addr not in self.known_sfrs: logging.warning(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+		if addr not in self.known_sfrs: logging.warning(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.sim.prev_csr_pc}')
 		self.sfr[addr] = value
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
 
-		if addr not in self.known_sfrs: logging.warning(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+		if addr not in self.known_sfrs: logging.warning(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.sim.prev_csr_pc}')
 		return self.sfr[addr]
 
 	def write_dsr(self, core, seg, addr, value):
@@ -974,7 +978,7 @@ class Sim:
 		if not hasattr(config, 'width'):  config.width  = size[0]
 		if not hasattr(config, 'height'): config.height = size[1]
 
-		self.sim = Core(rom, self.ko_mode)
+		self.sim = Core(self, rom)
 
 		self.root = DebounceTk()
 		self.root.geometry(f'{config.width}x{config.height}')
