@@ -22,9 +22,10 @@ hardware_id = 3
 # Toggle real/emulator ROM mode. *
 real_hardware = False
 
-# KO mode. If omitted or has an invalid value, 0 will be used.
-# 0 = Use F046H for KO (forced for all non-ES/ES PLUS models)
-# 1 = Use F044H for KO (inverted) (forced for ES hardware type)
+# KO mode. ES PLUS hardware type only. If omitted or has an invalid value, 0 will be used.
+# NOTE: Also defines the hardware subtype of ES PLUS.
+# 0 = Use F046H for KO
+# 1 = Use F044H for KO (inverted)
 ko_mode = 0
 
 # Pd value. Set on startup. Emulator only.
