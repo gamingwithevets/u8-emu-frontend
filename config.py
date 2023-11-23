@@ -23,8 +23,8 @@ hardware_id = 3
 real_hardware = False
 
 # KO mode. If omitted or has an invalid value, 0 will be used.
-# 0 = Use F046H for KO
-# 1 = Use F044H for KO (inverted)
+# 0 = Use F046H for KO (forced for all non-ES/ES PLUS models)
+# 1 = Use F044H for KO (inverted) (forced for ES hardware type)
 ko_mode = 0
 
 # Pd value. Set on startup. Emulator only.

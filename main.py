@@ -244,10 +244,9 @@ class Core:
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
 			))
 
-		else: regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			))
+		else:
+			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))))
+			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
@@ -980,6 +979,9 @@ class Sim:
 		if not hasattr(config, 'width'):  config.width  = size[0]
 		if not hasattr(config, 'height'): config.height = size[1]
 
+		if config.hardware_id == 2: self.ko_mode = 1 
+		elif config.hardware_id != 3: self.ko_mode = 0
+
 		self.sim = Core(self, rom)
 
 		self.root = DebounceTk()
@@ -1214,7 +1216,7 @@ class Sim:
 			version = self.read_dmem_bytes(0xfff4, 6, 1).decode()
 			rev = self.read_dmem_bytes(0xfffa, 2, 1).decode()
 			csum1 = self.read_dmem(0xfffc, 2, 1)
-			for i in range(0x10000): csum -= self.read_dmem(i, 1, 8)
+			for i in range(0x8000 if self.ko_mode else 0x10000): csum -= self.read_dmem(i, 1, 0 if self.ko_mode else 8)
 			for i in range(0xfffc): csum -= self.read_dmem(i, 1, 1)
 			
 			csum %= 0x10000
