@@ -24,8 +24,9 @@ NOTE: **This frontend uses CairoSVG.** That means if you're on Windows or macOS 
 # Usage
 When you open the emulator, you can right-click to see the available functions of the emulator. To step, press the backslash (`\`) key.
 
-To use a custom configuration Python script, run `python main.py <module-name>` (or `python3 main.py <module-name>`).
-`<module-name>` is the name of the Python script in module name form; for example if your configuration file is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
+To use a custom configuration Python script:
+- Run `python main.py <script-path>`. `<script-path>` is the path to your configuration script.
+- Or, run `python main.py <module-name>`. `<module-name>` is the name of the configuration script in module name form; for example if your configuration script is in `configs/config_main.py`, then `<module-name>` will be `configs.config_main`.
 
 # Images
 This emulator uses images extracted from emulators. To get them, you need to open the emulator EXE and DLL in a program like [7-Zip](https://7-zip.org) or [Resource Hacker](http://angusj.com/resourcehacker)

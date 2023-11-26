@@ -8,6 +8,8 @@ import ctypes
 import pygame
 import logging
 import functools
+import importlib
+import importlib.util
 import threading
 import traceback
 import tkinter as tk
@@ -29,15 +31,7 @@ if pygame.version.vernum < (2, 2, 0):
 	sys.exit()
 
 level = logging.INFO
-
-try:
-	exec(f'import {sys.argv[1]+" as " if len(sys.argv) > 1 else ""}config')
-	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level)
-	else: logging.basicConfig(format = '%(levelname)s: %(message)s', level = level)
-except ImportError as e:
-	logging.basicConfig(format = '%(levelname)s: %(message)s', level = level)
-	logging.error(str(e))
-	sys.exit()
+logging.basicConfig(format = '%(levelname)s: %(message)s', level = level)
 
 # For ROM8 reading
 class DisplayBounds(ctypes.Structure):
@@ -137,39 +131,6 @@ class u8_mem_acc_e(IntEnum):
 def uint8_ptr(array, offset):
 	vp = ctypes.cast(ctypes.pointer(array), ctypes.c_void_p).value + offset
 	return ctypes.cast(vp, ctypes.POINTER(ctypes.c_uint8))
-
-# Load the sim library
-sim_lib = ctypes.CDLL(os.path.abspath(config.shared_lib))
-
-sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
-
-sim_lib.read_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-sim_lib.read_reg_r.restype = ctypes.c_uint8
-sim_lib.read_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-sim_lib.read_reg_er.restype = ctypes.c_uint16
-sim_lib.read_reg_xr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-sim_lib.read_reg_xr.restype = ctypes.c_uint32
-sim_lib.read_reg_qr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-sim_lib.read_reg_qr.restype = ctypes.c_uint64
-
-sim_lib.write_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-sim_lib.write_reg_r.restype = None
-sim_lib.write_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-sim_lib.write_reg_er.restype = None
-sim_lib.write_reg_xr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-sim_lib.write_reg_xr.restype = None
-sim_lib.write_reg_qr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-sim_lib.write_reg_qr.restype = None
-
-sim_lib.read_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
-sim_lib.read_mem_data.restype = ctypes.c_uint64
-sim_lib.read_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
-sim_lib.read_mem_code.restype = ctypes.c_uint64
-
-sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
-sim_lib.write_mem_data.restype = None
-sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
-sim_lib.write_mem_code.restype = None
 
 ##
 # Core
@@ -1620,5 +1581,51 @@ class Sim:
 		self.root.after(0, self.pygame_loop)
 
 if __name__ == '__main__':
+	spec = importlib.util.spec_from_file_location('config', sys.argv[1] if len(sys.argv) > 1 else 'config.py')
+	if spec is None:
+		try: config = importlib.import_module(sys.argv[1] if len(sys.argv) > 1 else 'config')
+		except ImportError as e:
+			logging.error(f'Cannot import config script as module: {str(e)}')
+			sys.exit()
+	else:
+		config = importlib.util.module_from_spec(spec)
+		sys.modules['config'] = config
+		spec.loader.exec_module(config)
+
+	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level)
+
+	# Load the sim library
+	sim_lib = ctypes.CDLL(os.path.abspath(config.shared_lib))
+
+	sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
+
+	sim_lib.read_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
+	sim_lib.read_reg_r.restype = ctypes.c_uint8
+	sim_lib.read_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
+	sim_lib.read_reg_er.restype = ctypes.c_uint16
+	sim_lib.read_reg_xr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
+	sim_lib.read_reg_xr.restype = ctypes.c_uint32
+	sim_lib.read_reg_qr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
+	sim_lib.read_reg_qr.restype = ctypes.c_uint64
+
+	sim_lib.write_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
+	sim_lib.write_reg_r.restype = None
+	sim_lib.write_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
+	sim_lib.write_reg_er.restype = None
+	sim_lib.write_reg_xr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
+	sim_lib.write_reg_xr.restype = None
+	sim_lib.write_reg_qr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
+	sim_lib.write_reg_qr.restype = None
+
+	sim_lib.read_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
+	sim_lib.read_mem_data.restype = ctypes.c_uint64
+	sim_lib.read_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
+	sim_lib.read_mem_code.restype = ctypes.c_uint64
+
+	sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
+	sim_lib.write_mem_data.restype = None
+	sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
+	sim_lib.write_mem_code.restype = None
+
 	sim = Sim()
 	sim.run()
