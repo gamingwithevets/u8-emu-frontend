@@ -831,7 +831,7 @@ Breakpoint               {format(self.sim.breakpoint >> 16, '02') + ':' + format
 Write breakpoint         {format(self.sim.write_brkpoint >> 16, '02X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[0] else ' '}]  2 [{'x' if  self.sim.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
-Instructions per second  {format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None'}\
+{('Instructions per second  ' + format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else ''}\
 '''
 
 	@staticmethod
@@ -1023,6 +1023,8 @@ class Sim:
 		self.sbar_hi = config.s_height
 
 		self.disp_lcd = tk.IntVar(value = 0)
+		self.enable_ips = False
+		self.enable_ips_tk = tk.BooleanVar(value = False)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Step', accelerator = '\\', command = self.set_step)
@@ -1068,6 +1070,9 @@ class Sim:
 		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
 		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
 		extra_funcs.add_command(label = 'Modify general registers', command = self.gp_modify.open)
+		extra_funcs.add_separator()
+		extra_funcs.add_checkbutton(label = 'Enable instructions per second', variable = self.enable_ips_tk, command = self.set_enable_ips)
+
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Quit', command = self.exit_sim)
@@ -1094,10 +1099,6 @@ class Sim:
 		self.stop_accept = [False, False]
 		self.stop_mode = False
 
-		self.ips = 0
-		self.ips_start = time.time()
-		self.ips_ctr = 0
-
 		self.nsps = 1e9
 		self.max_ns_per_update = 1e9
 		self.max_ticks_per_update = 100
@@ -1106,6 +1107,13 @@ class Sim:
 		self.passed_time = 0
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
+
+	def set_enable_ips(self):
+		self.enable_ips = self.enable_ips_tk.get()
+		if self.enable_ips:
+			self.ips = 0
+			self.ips_start = time.time()
+			self.ips_ctr = 0
 
 	def read_emu_kb(self, idx):
 		if config.hardware_id == 0: return self.sim.data_mem[0x800 + idx]
@@ -1249,14 +1257,14 @@ class Sim:
 			if self.read_emu_kb(0) in (2, 8) and [self.read_emu_kb(i) for i in (1, 2)] != [1<<2, 1<<4]: self.write_emu_kb(0, 0)
 
 	def sbycon(self):
-		sbycon = self.sim.sfr[9]
-
-		if sbycon & (1 << 1) and all(self.stop_accept):
-			self.stop_mode = True
-			self.stop_accept = [False, False]
-			self.sim.sfr[8] = 0
-			self.sim.sfr[0x22] = 0
-			self.sim.sfr[0x23] = 0
+		if self.sim.sfr[9] & (1 << 1):
+			if all(self.stop_accept):
+				self.stop_mode = True
+				self.stop_accept = [False, False]
+				self.sim.sfr[8] = 0
+				self.sim.sfr[0x22] = 0
+				self.sim.sfr[0x23] = 0
+			else: self.sim.sfr[9] &= ~(1 << 1)
 
 	def timer(self):
 		now = time.time_ns()
@@ -1311,13 +1319,13 @@ class Sim:
 
 			self.ok = True
 
-			if self.ips_ctr % 1000 == 0:
-				cur = time.time()
-				try: self.ips = 1000 / (cur - self.ips_start)
-				except ZeroDivisionError: self.ips = None
-				self.ips_start = cur
-
-			self.ips_ctr += 1
+			if self.enable_ips:
+				if self.ips_ctr % 1000 == 0:
+					cur = time.time()
+					try: self.ips = 1000 / (cur - self.ips_start)
+					except ZeroDivisionError: self.ips = None
+					self.ips_start = cur
+				self.ips_ctr += 1
 
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step:
 				self.set_single_step(True)
@@ -1380,7 +1388,7 @@ class Sim:
 			scr_bytes[0x16] & (1 << 0),  # SD
 			]
 
-			screen_data_raw = [[scr_bytes[i*8+j] & (1 << k) for j in range(8) for k in range(7, -1, -1)] for i in range(3)]
+			screen_data_raw = [[3 if scr_bytes[i*8+j] & (1 << k) else 0 for j in range(8) for k in range(7, -1, -1)] for i in range(3)]
 
 			screen_data = []
 			for j in range(12):
@@ -1417,7 +1425,7 @@ class Sim:
 			sbar[0x16] & 1,  # ☼
 			]
 
-			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
+			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
 
 		else:
 			screen_data_status_bar = [
@@ -1441,9 +1449,10 @@ class Sim:
 			sbar[0xb] & (1 << 4),  # Disp
 			]
 			
-			screen_data = [[scr_bytes[1+i][j] & (1 << k) for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
+			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
 
 		return screen_data_status_bar, screen_data
+
 	@staticmethod
 	@functools.lru_cache
 	def get_scr_data_cwii(addr, scr_bytes_lo, scr_bytes_hi):
@@ -1534,8 +1543,8 @@ class Sim:
 			screen_data_status_bar, screen_data = self.get_scr_data_cwii(scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
 		else: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
-		scr_range = self.read_dmem(0xf030, 1) & 7
-		scr_mode = self.read_dmem(0xf031, 1) & 7
+		scr_range = self.sim.sfr[0x30] & 7
+		scr_mode = self.sim.sfr[0x31] & 7
 
 		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
 			for i in range(len(screen_data_status_bar)):
@@ -1563,15 +1572,11 @@ class Sim:
 					if data[5]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
 					if data[6]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*10, pix*2, pix))
 					if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
-		elif config.hardware_id == 5:
-			for y in range(scr[2] - 1):
-				for x in range(scr[4]):
-					if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
 					for x in range(scr[4]):
-						if screen_data[y][x]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
+						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
 		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
