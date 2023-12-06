@@ -1036,7 +1036,9 @@ class Sim:
 
 		self.disp_lcd = tk.IntVar(value = 0)
 		self.enable_ips = False
-		self.enable_ips_tk = tk.BooleanVar(value = False)
+		self.enable_ips_tk = tk.BooleanVar(value = self.enable_ips)
+		self.enable_fps = True
+		self.enable_fps_tk = tk.BooleanVar(value = self.enable_fps)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Step', accelerator = '\\', command = self.set_step)
@@ -1082,10 +1084,13 @@ class Sim:
 		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
 		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
 		extra_funcs.add_command(label = 'Modify general registers', command = self.gp_modify.open)
-		extra_funcs.add_separator()
-		extra_funcs.add_checkbutton(label = 'Enable instructions per second', variable = self.enable_ips_tk, command = self.set_enable_ips)
-
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
+		
+		options = tk.Menu(self.rc_menu, tearoff = 0)
+		options.add_checkbutton(label = 'IPS display (in register display)', variable = self.enable_ips_tk, command = self.set_enable_ips)
+		options.add_checkbutton(label = 'FPS display', variable = self.enable_fps_tk, command = self.set_enable_fps)
+		self.rc_menu.add_cascade(label = 'Options', menu = options)
+
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Quit', command = self.exit_sim)
 
@@ -1126,6 +1131,8 @@ class Sim:
 			self.ips = 0
 			self.ips_start = time.time()
 			self.ips_ctr = 0
+
+	def set_enable_fps(self): self.enable_fps = self.enable_fps_tk.get()
 
 	def read_emu_kb(self, idx):
 		if config.hardware_id == 0: return self.sim.data_mem[0x800 + idx]
@@ -1597,7 +1604,7 @@ class Sim:
 						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
-		else: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
+		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
 
 		pygame.display.update()
 		self.root.update()
