@@ -1,6 +1,7 @@
 # Configuration file for u8_emu frontend
 
 # * Required if ROM8 mode is disabled. If ROM8 mode is enabled this setting may be overwritten.
+# ** Optional, may be overwritten by a ROM8.
 
 # Path to the shared library.
 shared_lib = 'core.so'
@@ -32,10 +33,10 @@ ko_mode = 0
 # If omitted, Pd value is not set.
 pd_value = 0
 
-# Path to the status bar image.
+# Path to the status bar image. **
 status_bar_path = 'images/interface_es_bar.png'
 
-# Path to the interface image. *
+# Path to the interface image. **
 interface_path = 'images/interface_esp_83gtp.png'
 
 # Settings for the Tkinter window.
@@ -48,7 +49,8 @@ height = 816
 s_width = 288
 s_height = 12
 
-# Name of the Tkinter window. *(also required if there is no 'model=' prop in the ROM8 file)
+# Name of the Tkinter window. **
+# Default: 'u8-emu-frontend'
 root_w_name = 'fx-83GT PLUS Emulator'
 
 # "Console" text font.
@@ -87,10 +89,7 @@ data_mem_height = 600
 # Hex display text font.
 data_mem_font = ('Courier New', 11)
 
-# The settings below should work out of the box for ES and ES PLUS ROMs.
-# Only modify if you know what you're doing.
-
-# Crop areas of the status bar.
+# Crop areas of the status bar. (optional)
 status_bar_crops = (
 (0, 0, 8, 10),     # [S]
 (9, 0, 9, 10),     # [A]
@@ -112,7 +111,7 @@ status_bar_crops = (
 (268, 0, 19, 11),  # Disp
 )
 
-# Keymap for the keyboard.
+# Keymap for the keyboard. **
 # None = core reset
 keymap = {
 	(7, 0): ((41,  293, 48, 38), 'f1',         ''),
@@ -167,7 +166,7 @@ keymap = {
 	(0, 6): ((302, 721, 61, 41), 'return',     ''),
 }
 
-# Keymap: use chars instead of keysyms. *
+# Keymap: use chars instead of keysyms. **
 use_char = False
 
 # Date and time format for logging module.

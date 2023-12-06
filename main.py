@@ -840,10 +840,12 @@ STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 
 class Sim:
 	def __init__(self):
-		im = PIL.Image.open(config.status_bar_path)
-		size = im.size
-		if not hasattr(config, 's_width'):  config.s_width  = size[0]
-		if not hasattr(config, 's_height'): config.s_height = size[1]
+		try:
+			im = PIL.Image.open(config.status_bar_path)
+			size = im.size
+			if not hasattr(config, 's_width'):  config.s_width  = size[0]
+			if not hasattr(config, 's_height'): config.s_height = size[1]
+		except (AttributeError, IOError): pass
 
 		self.rom8 = config.rom8 if hasattr(config, 'rom8') else False
 		self.use_char = config.use_char if hasattr(config, 'use_char') else False
@@ -935,10 +937,12 @@ class Sim:
 				logging.error('ROM size cannot be odd')
 				sys.exit()
 
-		im = PIL.Image.open(config.interface_path)
-		size = im.size
-		if not hasattr(config, 'width'):  config.width  = size[0]
-		if not hasattr(config, 'height'): config.height = size[1]
+		try:
+			im = PIL.Image.open(config.interface_path)
+			size = im.size
+			if not hasattr(config, 'width'):  config.width  = size[0]
+			if not hasattr(config, 'height'): config.height = size[1]
+		except (AttributeError, IOError): pass
 
 		if config.hardware_id == 2: self.ko_mode = 1 
 		elif config.hardware_id != 3: self.ko_mode = 0
@@ -948,7 +952,8 @@ class Sim:
 		self.root = DebounceTk()
 		self.root.geometry(f'{config.width}x{config.height}')
 		self.root.resizable(False, False)
-		self.root.title(config.root_w_name)
+		try: self.root.title(config.root_w_name)
+		except AttributeError: self.root.title('u8-emu-frontend')
 		self.root.protocol('WM_DELETE_WINDOW', self.exit_sim)
 		self.root.focus_set()
 
@@ -957,7 +962,8 @@ class Sim:
 
 		self.keys_pressed = set()
 		self.keys = []
-		for key in [i[1:] for i in config.keymap.values()]: self.keys.extend(key)
+		if hasattr(config, 'keymap'):
+			for key in [i[1:] for i in config.keymap.values()]: self.keys.extend(key)
 
 		self.jump = Jump(self)
 		self.brkpoint = Brkpoint(self)
@@ -1002,10 +1008,11 @@ class Sim:
 			self.keys_pressed.clear()
 			return
 
-		embed_pygame.bind('<KeyPress>', press_cb)
-		embed_pygame.bind('<KeyRelease>', release_cb)
-		embed_pygame.bind('<ButtonPress-1>', press_cb)
-		embed_pygame.bind('<ButtonRelease-1>', release_cb)
+		if hasattr(config, 'keymap'):
+			embed_pygame.bind('<KeyPress>', press_cb)
+			embed_pygame.bind('<KeyRelease>', release_cb)
+			embed_pygame.bind('<ButtonPress-1>', press_cb)
+			embed_pygame.bind('<ButtonRelease-1>', release_cb)
 
 		if os.name != 'nt': self.root.update()
 
@@ -1014,13 +1021,18 @@ class Sim:
 		pygame.init()
 		self.screen = pygame.display.set_mode()
 
-		self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
-		self.interface_rect = self.interface.get_rect()
+		try:
+			self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
+			self.interface_rect = self.interface.get_rect()
+		except (AttributeError, IOError): self.interface = None
 
-		self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
-		self.status_bar_rect = self.status_bar.get_rect()
-
-		self.sbar_hi = config.s_height
+		try:
+			self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
+			self.status_bar_rect = self.status_bar.get_rect()
+			self.sbar_hi = config.s_height
+		except (AttributeError, IOError):
+			self.status_bar = None
+			self.sbar_hi = 0
 
 		self.disp_lcd = tk.IntVar(value = 0)
 		self.enable_ips = False
@@ -1034,7 +1046,7 @@ class Sim:
 		self.rc_menu.add_command(label = 'Jump to...', accelerator = 'J', command = self.jump.deiconify)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Set breakpoint to...', accelerator = 'B', command = self.brkpoint.deiconify)
-		self.rc_menu.add_command(label = 'Set write breakpoint to...', accelerator = 'B', command = self.write_brkpoint.deiconify)
+		self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify)
 		self.rc_menu.add_command(label = 'Clear breakpoints', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
@@ -1529,7 +1541,7 @@ class Sim:
 		self.clock.tick()
 
 		self.screen.fill((214, 227, 214))
-		self.screen.blit(self.interface, self.interface_rect)
+		if self.interface is not None: self.screen.blit(self.interface, self.interface_rect)
 		try:
 			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGBA_ADD)
 		except RuntimeError: pass
@@ -1551,9 +1563,10 @@ class Sim:
 		scr_range = self.sim.sfr[0x30] & 7
 		scr_mode = self.sim.sfr[0x31] & 7
 
-		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
+		if ((not disp_lcd and scr_mode in (5, 6)) or disp_lcd) and self.status_bar is not None:
 			for i in range(len(screen_data_status_bar)):
-				crop = config.status_bar_crops[i]
+				try: crop = config.status_bar_crops[i]
+				except IndexError: continue
 				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
 	
 		if config.hardware_id == 0:
