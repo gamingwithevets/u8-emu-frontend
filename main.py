@@ -1233,8 +1233,13 @@ class Sim:
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
 
 	def open_popup(self, x):
-		try: self.rc_menu.tk_popup(x.x_root, x.y_root)
-		finally: self.rc_menu.grab_release()
+		try:
+			sstep_bak = self.single_step
+			self.set_single_step(True)
+			self.rc_menu.tk_popup(x.x_root, x.y_root)
+		finally:
+			self.rc_menu.grab_release()
+			self.set_single_step(sstep_bak)
 
 	def keyboard(self):
 		ki = 0xff
