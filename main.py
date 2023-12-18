@@ -278,15 +278,15 @@ class Core:
 
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
-		if addr not in self.force: self.sfr[addr] = value
+		if addr not in self.force:
+			try: self.sfr[addr] = value
+			except IndexError: self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1, value)
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
 		if addr in self.force: self.sfr[addr] = self.force[addr]
 		try: return self.sfr[addr]
-		except Exception:
-			logging.error(f'Error reading SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}')
-			return 0
+		except IndexError: return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 
 	def write_dsr(self, core, seg, addr, value):
 		self.sfr[0] = value
@@ -842,8 +842,8 @@ EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
 Other information:
-Breakpoint               {format(self.sim.breakpoint >> 16, '02') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
-Write breakpoint         {format(self.sim.write_brkpoint >> 16, '02X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
+Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
+Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[0] else ' '}]  2 [{'x' if  self.sim.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 {('Instructions per second  ' + format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else ''}\
@@ -1072,13 +1072,13 @@ class Sim:
 		self.rc_menu.add_separator()
 
 		self.screen_stuff = {
-	   # hwid: (alloc, used, rows, buffers,          columns)
-			0: (0x8,   0x8,  4,  [],               64),
-			2: (0x10,  0xc,  32, [0x8600],         96),
-			3: (0x10,  0xc,  32, [0x87d0],         96),
-			4: (0x20,  0x18, 64, [0xddd4, 0xe3d4], 192),
-			5: (0x20,  0x18, 64, [0xca54, 0xd654], 192),
-			6: (0x8,   0x8, 192, [0xf800],         64),
+	   # hwid: (alloc, used, rows,buffers,          columns)
+			0: (0x8,   0x8,  4,   [],               64),
+			2: (0x10,  0xc,  32,  [0x8600],         96),
+			3: (0x10,  0xc,  32,  [0x87d0],         96),
+			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
+			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
+			6: (0x8,   0x8,  192, [0xf800],         64),
 		}
 
 		# first item can be anything
@@ -1093,9 +1093,8 @@ class Sim:
 			display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
 			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ 00:{self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
-		elif config.hardware_id != 6: self.disp_lcd = 1
-		
-		self.rc_menu.add_separator()
+			self.rc_menu.add_separator()
+		elif config.hardware_id == 6: self.disp_lcd.set(1)
 
 		extra_funcs = tk.Menu(self.rc_menu, tearoff = 0)
 		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
@@ -1472,7 +1471,7 @@ class Sim:
 
 		elif config.hardware_id == 6:
 			screen_data_status_bar = []
-			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(8) for k in range(7, -1, -1)] for i in range(192)]
+			screen_data = [[3 if scr_bytes[i][j] & (1 << k) else 0 for j in range(7, -1, -1) for k in range(7, -1, -1)] for i in range(192)]
 
 		else:
 			screen_data_status_bar = [
@@ -1496,7 +1495,6 @@ class Sim:
 			sbar[0xb] & (1 << 4),  # Disp
 			]
 			
-			print(scr_bytes)
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
 
 		return screen_data_status_bar, screen_data
@@ -1563,7 +1561,8 @@ class Sim:
 		else: scr = self.screen_stuff[3]
 
 		disp_lcd = self.disp_lcd.get()
-		if self.num_buffers > 0 and config.hardware_id != 6: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ 00:"+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+		if config.hardware_id == 6: self.draw_text(f'Displaying screen data {"@ "+format(scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+		elif self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ "+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
 		else: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
@@ -1603,6 +1602,10 @@ class Sim:
 					if data[5]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
 					if data[6]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*10, pix*2, pix))
 					if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
+		elif config.hardware_id == 6:
+			for y in range(scr[4]):
+				for x in range(scr[2]):
+					if screen_data[x][y]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + (64-y)*config.pix, config.pix, config.pix))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
@@ -1610,7 +1613,7 @@ class Sim:
 						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
-		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 and config.hardware_id != 6 else self.text_y, config.pygame_color, anchor = 'midtop')
+		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
 
 		pygame.display.update()
 		self.root.update()
