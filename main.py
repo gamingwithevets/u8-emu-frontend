@@ -18,6 +18,7 @@ import tkinter.font
 import tkinter.messagebox
 from enum import IntEnum
 
+sys.path.append('pyu8disas')
 from pyu8disas import main as disas_main
 from tool8 import tool8
 import platform
@@ -112,7 +113,8 @@ class u8_mem_t(ctypes.Structure):
 u8_core_t._fields_ = [
 		("regs",	u8_regs_t),
 		("cur_dsr",	ctypes.c_uint8),
-		("mem",		u8_mem_t)
+		("mem",		u8_mem_t),
+		('last_swi',ctypes.c_uint8),
 	]
 
 class u8_mem_type_e(IntEnum):	
@@ -152,6 +154,7 @@ class Core:
 		3: 0x7fff,
 		4: 0xcfff,
 		5: 0x8fff,
+		6: 0xafff,
 		}
 
 		data_size = {
@@ -159,12 +162,16 @@ class Core:
 		3: (0x8000, 0xe00 if config.real_hardware else 0x7000),
 		4: (0xd000, 0x2000),
 		5: (0x9000, 0x6000),
+		6: (0xb000, 0x4000),
 		}
 
-		self.known_sfrs = [0, 8, 9, 0xa, 0x10, 0x11, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x30, 0x31, 0x32, 0x33, 0x40, 0x42, 0x44 if ko_mode else 0x46, 0x50, 0x310]
-		if config.hardware_id == 0: self.known_sfrs.extend(list(range(0x800, 0x820)))
-		elif config.hardware_id in (4, 5): self.known_sfrs.extend(list(range(0x800, 0x1000)))
-		else: self.known_sfrs.extend(list(range(0x800, 0xa00)))
+		self.force = {}
+		if config.hardware_id == 6:
+			self.force = {
+			0xe: 1,
+			0x60: 1,
+			0x901: 0,
+			}
 
 		self.sdata = data_size[config.hardware_id if config.hardware_id in data_size else 3]
 
@@ -205,6 +212,13 @@ class Core:
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
 			))
 
+		elif config.hardware_id == 6:
+			regions.extend((
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
+			))
+
 		else:
 			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))))
 			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))))
@@ -216,10 +230,11 @@ class Core:
 		self.core.regs.sp = rom[0] | rom[1] << 8
 		self.core.regs.pc = rom[2] | rom[3] << 8
 	
-
 	def u8_step(self):
 		self.sfr[0] = self.core.regs.dsr
 		sim_lib.u8_step(ctypes.pointer(self.core))
+
+	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 	
 	# Register Access
 	def read_reg_r(self, reg):
@@ -263,15 +278,15 @@ class Core:
 
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
-
-		if addr not in self.known_sfrs: logging.warning(f'Write to unknown SFR {0xf000 + addr:04X}H (value #{value:02X}H) @ {self.sim.prev_csr_pc}')
-		self.sfr[addr] = value
+		if addr not in self.force: self.sfr[addr] = value
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
-
-		if addr not in self.known_sfrs: logging.warning(f'Read from unknown SFR {0xf000 + addr:04X}H @ {self.sim.prev_csr_pc}')
-		return self.sfr[addr]
+		if addr in self.force: self.sfr[addr] = self.force[addr]
+		try: return self.sfr[addr]
+		except Exception:
+			logging.error(f'Error reading SFR {0xf000 + addr:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}')
+			return 0
 
 	def write_dsr(self, core, seg, addr, value):
 		self.sfr[0] = value
@@ -1058,25 +1073,27 @@ class Sim:
 
 		self.screen_stuff = {
 	   # hwid: (alloc, used, rows, buffers,          columns)
-			0: (0x8,   0x8,  4,    [],               0x40),
-			2: (0x10,  0xc,  0x20, [0x8600],         96),
-			3: (0x10,  0xc,  0x20, [0x87d0],         96),
-			4: (0x20,  0x18, 0x40, [0xddd4, 0xe3d4], 192),
-			5: (0x20,  0x18, 0x40, [0xca54, 0xd654], 192),
+			0: (0x8,   0x8,  4,  [],               64),
+			2: (0x10,  0xc,  32, [0x8600],         96),
+			3: (0x10,  0xc,  32, [0x87d0],         96),
+			4: (0x20,  0x18, 64, [0xddd4, 0xe3d4], 192),
+			5: (0x20,  0x18, 64, [0xca54, 0xd654], 192),
+			6: (0x8,   0x8, 192, [0xf800],         64),
 		}
 
 		# first item can be anything
 		self.cwii_screen_colors = (None, (170, 170, 170), (85, 85, 85), (0, 0, 0))
 
-		self.num_buffers = len(self.screen_stuff[config.hardware_id][3])
+		self.num_buffers = len(self.screen_stuff[config.hardware_id][3]) if config.hardware_id in self.screen_stuff else 0
 
-		if self.num_buffers > 0:
+		if self.num_buffers > 0 and config.hardware_id != 6:
 			display_mode = tk.Menu(self.rc_menu, tearoff = 0)
 			display_mode.add_command(label = 'Press D to switch between display modes', state = 'disabled')
 			display_mode.add_separator()
 			display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
 			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ 00:{self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
+		elif config.hardware_id != 6: self.disp_lcd = 1
 		
 		self.rc_menu.add_separator()
 
@@ -1103,7 +1120,7 @@ class Sim:
 		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.reg_display.open())
-		self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
+		if config.hardware_id != 6: self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
 
 		self.single_step = True
 		self.ok = True
@@ -1326,13 +1343,17 @@ class Sim:
 		if not self.stop_mode:
 			if self.write_brkpoint != None: addr_write = self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16)
 
-			self.ok = False
 			try: self.sim.u8_step()
-			except Exception as e: pass
-			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id in (2, 3) else 0x10
+			except Exception: pass
+			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
 			self.sim.core.regs.pc &= 0xfffe
 
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
+
+			if config.hardware_id == 6:
+				last_swi = self.sim.core.last_swi
+				if last_swi < 0x40:
+					if last_swi == 1: self.screen_stuff[6][3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 
 			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
@@ -1340,8 +1361,6 @@ class Sim:
 					if stpacp & 0xa0 == 0xa0: self.stop_accept[1] = True
 					elif stpacp & 0x50 != 0x50: self.stop_accept[0] = False
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
-
-			self.ok = True
 
 			if self.enable_ips:
 				if self.ips_ctr % 1000 == 0:
@@ -1451,6 +1470,10 @@ class Sim:
 
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
 
+		elif config.hardware_id == 6:
+			screen_data_status_bar = []
+			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(8) for k in range(7, -1, -1)] for i in range(192)]
+
 		else:
 			screen_data_status_bar = [
 			sbar[0]   & (1 << 4),  # [S]
@@ -1473,6 +1496,7 @@ class Sim:
 			sbar[0xb] & (1 << 4),  # Disp
 			]
 			
+			print(scr_bytes)
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
 
 		return screen_data_status_bar, screen_data
@@ -1508,28 +1532,10 @@ class Sim:
 		return screen_data_status_bar, screen_data
 
 	def reset_core(self):
-		self.core_reset()
+		self.sim.u8_reset()
 		self.prev_csr_pc = None
 		self.reg_display.print_regs()
 		self.data_mem.get_mem()
-
-	def core_reset(self):
-		self.sim.write_reg_qr(0, 0)
-		self.sim.write_reg_qr(8, 0)
-		self.sim.core.regs.pc = self.init_pc
-		self.sim.core.regs.csr = 0
-		self.sim.core.regs.lcsr = 0
-		self.sim.core.regs.lr = 0
-		self.sim.core.regs.psw = 0
-
-		for i in range(3):
-			self.sim.core.regs.ecsr[i] = 0
-			self.sim.core.regs.elr[i] = 0
-			self.sim.core.regs.epsw[i] = 0
-
-		self.sim.core.regs.sp = self.init_sp
-		self.sim.core.regs.ea = 0
-		self.sim.core.regs.dsr = 0
 
 	def exit_sim(self):
 		if self.rom8: os.remove(config.interface_path)
@@ -1557,7 +1563,7 @@ class Sim:
 		else: scr = self.screen_stuff[3]
 
 		disp_lcd = self.disp_lcd.get()
-		if self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ 00:"+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+		if self.num_buffers > 0 and config.hardware_id != 6: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ 00:"+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
 		else: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
@@ -1604,7 +1610,7 @@ class Sim:
 						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
 
 		if self.single_step: self.step = False
-		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
+		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 and config.hardware_id != 6 else self.text_y, config.pygame_color, anchor = 'midtop')
 
 		pygame.display.update()
 		self.root.update()

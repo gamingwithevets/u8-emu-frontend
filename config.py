@@ -18,6 +18,7 @@ rom8 = False
 # 3 = ES PLUS
 # 4 = ClassWiz (First generation - EX/X/CWI)
 # 5 = ClassWiz (Second generation - CW/CWII)
+# 6 = TI MathPrint (ML620418A)
 hardware_id = 3
 
 # Toggle real/emulator ROM mode. *
