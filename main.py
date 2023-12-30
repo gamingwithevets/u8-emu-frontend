@@ -168,7 +168,6 @@ class Core:
 		self.force = {}
 		if config.hardware_id == 6:
 			self.force = {
-			0xe: 1,
 			0x60: 1,
 			0x901: 0,
 			}
@@ -279,14 +278,22 @@ class Core:
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
 		if addr not in self.force:
-			try: self.sfr[addr] = value
-			except IndexError: self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1, value)
+			try:
+				if addr == 0xe:
+					self.sfr[0xe] = value & 0b11111110
+					if value & 1 == 0: self.sfr[0xe] |= 1
+					else: self.sfr[0xe] &= ~1
+				else: self.sfr[addr] = value
+			except IndexError: logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
 		if addr in self.force: self.sfr[addr] = self.force[addr]
 		try: return self.sfr[addr]
-		except IndexError: return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
+		
+		except IndexError:
+			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 
 	def write_dsr(self, core, seg, addr, value):
 		self.sfr[0] = value
@@ -803,6 +810,7 @@ class RegDisplay(tk.Toplevel):
 
 	def print_regs(self):
 		regs = self.sim.sim.core.regs
+		last_swi = self.sim.sim.core.last_swi
 
 		csr = regs.csr
 		pc = regs.pc
@@ -846,6 +854,7 @@ Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(
 Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[0] else ' '}]  2 [{'x' if  self.sim.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
+Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 {('Instructions per second  ' + format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else ''}\
 '''
 
@@ -1044,10 +1053,10 @@ class Sim:
 		try:
 			self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
 			self.status_bar_rect = self.status_bar.get_rect()
-			self.sbar_hi = config.s_height
-		except (AttributeError, IOError):
-			self.status_bar = None
-			self.sbar_hi = 0
+		except (AttributeError, IOError): self.status_bar = None
+		
+		if hasattr(config, 's_height'): self.sbar_hi = config.s_height
+		else: self.sbar_hi = 0
 
 		self.disp_lcd = tk.IntVar(value = 0)
 		self.enable_ips = False
@@ -1078,7 +1087,7 @@ class Sim:
 			3: (0x10,  0xc,  32,  [0x87d0],         96),
 			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
 			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
-			6: (0x8,   0x8,  192, [0xf800],         64),
+			6: (0x8,   0x8,  192, [None],         64),
 		}
 
 		# first item can be anything
@@ -1091,7 +1100,7 @@ class Sim:
 			display_mode.add_command(label = 'Press D to switch between display modes', state = 'disabled')
 			display_mode.add_separator()
 			display_mode.add_radiobutton(label = 'LCD', variable = self.disp_lcd, value = 0)
-			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ 00:{self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
+			for i in range(self.num_buffers): display_mode.add_radiobutton(label = f'Buffer {i+1 if self.num_buffers > 1 else ""} @ {self.screen_stuff[config.hardware_id][3][i]:04X}H', variable = self.disp_lcd, value = i+1)
 			self.rc_menu.add_cascade(label = 'Display mode', menu = display_mode)
 			self.rc_menu.add_separator()
 		elif config.hardware_id == 6: self.disp_lcd.set(1)
@@ -1108,6 +1117,7 @@ class Sim:
 		self.rc_menu.add_cascade(label = 'Options', menu = options)
 
 		self.rc_menu.add_separator()
+		self.rc_menu.add_command(label = 'Reset core', command = self.reset_core)
 		self.rc_menu.add_command(label = 'Quit', command = self.exit_sim)
 
 		self.root.bind('<Button-3>', self.open_popup)
@@ -1131,6 +1141,7 @@ class Sim:
 		self.prev_csr_pc = None
 		self.stop_accept = [False, False]
 		self.stop_mode = False
+		self.wdtcon_clr = False
 
 		self.nsps = 1e9
 		self.max_ns_per_update = 1e9
@@ -1341,18 +1352,29 @@ class Sim:
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		if not self.stop_mode:
 			if self.write_brkpoint != None: addr_write = self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16)
+			wdp = self.sim.sfr[0xe] & 1
 
 			try: self.sim.u8_step()
 			except Exception: pass
 			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
 			self.sim.core.regs.pc &= 0xfffe
+			if config.hardware_id == 6: self.sim.core.regs.sp &= 0xfffe
 
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
 			if config.hardware_id == 6:
 				last_swi = self.sim.core.last_swi
 				if last_swi < 0x40:
-					if last_swi == 1: self.screen_stuff[6][3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
+					if last_swi == 1:
+						self.screen_stuff[6][3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
+						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
+					elif last_swi == 2:
+						# temporary
+						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
+					#else:
+					#	self.set_single_step(True)
+					#	self.reg_display.open()
+					#	self.keys_pressed.clear()
 
 			stpacp = self.sim.sfr[8]
 			if self.stop_accept[0]:
@@ -1360,6 +1382,15 @@ class Sim:
 					if stpacp & 0xa0 == 0xa0: self.stop_accept[1] = True
 					elif stpacp & 0x50 != 0x50: self.stop_accept[0] = False
 			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
+
+			if config.hardware_id == 6:
+				wdtcon = self.sim.sfr[0xe]
+				if self.wdtcon_clr:
+					if wdtcon == 0xa4 and wdp == 1:
+						self.sim.sfr[0xe] = 0
+						self.wdtcon_clr = False
+					elif wdtcon != 0x5b: self.wdtcon_clr = False
+				elif wdtcon == 0x5b and wdp == 0: self.wdtcon_clr = True
 
 			if self.enable_ips:
 				if self.ips_ctr % 1000 == 0:
@@ -1561,16 +1592,18 @@ class Sim:
 		else: scr = self.screen_stuff[3]
 
 		disp_lcd = self.disp_lcd.get()
-		if config.hardware_id == 6: self.draw_text(f'Displaying screen data {"@ "+format(scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+		if config.hardware_id == 6:
+			if scr[3][0] is None: self.draw_text('Waiting for SWI 0...', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+			else: self.draw_text(f'Displaying screen data {"@ "+format(scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 		elif self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ "+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
-		else: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
+		elif scr[3][disp_lcd-1] is not None: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
 		if config.hardware_id == 5:
 			if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(scr[3][disp_lcd-1] + scr[1]*scr[2] + i*scr[1], scr[1]) for i in range(scr[2]))
 			else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*scr[0], scr[1], 8) for i in range(scr[2]))
 			screen_data_status_bar, screen_data = self.get_scr_data_cwii(scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
-		else: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
+		elif scr[3][disp_lcd-1] is not None: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.sim.sfr[0x30] & 7
 		scr_mode = self.sim.sfr[0x31] & 7
@@ -1603,9 +1636,10 @@ class Sim:
 					if data[6]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*10, pix*2, pix))
 					if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
 		elif config.hardware_id == 6:
-			for y in range(scr[4]):
-				for x in range(scr[2]):
-					if screen_data[x][y]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + (64-y)*config.pix, config.pix, config.pix))
+			if scr[3][0] is not None:
+				for y in range(scr[4]):
+					for x in range(scr[2]):
+						if screen_data[x][y]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + (64-y)*config.pix, config.pix, config.pix))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
@@ -1631,7 +1665,7 @@ if __name__ == '__main__':
 		sys.modules['config'] = config
 		spec.loader.exec_module(config)
 
-	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level)
+	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level, force = True)
 
 	# Load the sim library
 	sim_lib = ctypes.CDLL(os.path.abspath(config.shared_lib))
