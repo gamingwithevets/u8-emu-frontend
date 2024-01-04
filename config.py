@@ -13,8 +13,8 @@ rom_file = 'rom.bin'
 rom8 = False
 
 # Hardware type. *
-# 0 = fx-82SOLAR II
-# 2 = ES
+# 0 = SOLAR II
+# 2 = ES, FC, fx-5800P
 # 3 = ES PLUS
 # 4 = ClassWiz (First generation - EX/X/CWI)
 # 5 = ClassWiz (Second generation - CW/CWII)
@@ -73,11 +73,16 @@ text_y = 22
 screen_tl_w = 58
 screen_tl_h = 132
 
-# Pixel size. *
 # Note that decimal pixel sizes do not look correctly.
+
+# Pixel width. *
 pix = 3
 
-# Small pixel size. Only used for fx-82SOLAR II.
+# Pixel height. Not used for SOLAR II and TI MathPrint.
+# If omitted, the pixel width will be used.
+#pix_hi = None
+
+# Small pixel size. Only used for SOLAR II.
 # pix_s = None
 
 # Pixel color. Optional; default is (0, 0, 0).

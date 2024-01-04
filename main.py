@@ -876,6 +876,7 @@ class Sim:
 		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
 		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
 		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
+		self.pix_hi = config.pix_hi if hasattr(config, 'pix_hi') else config.pix
 
 		if self.rom8:
 			tags = list(tool8.read8(config.rom_file))
@@ -1593,17 +1594,17 @@ class Sim:
 
 		disp_lcd = self.disp_lcd.get()
 		if config.hardware_id == 6:
-			if scr[3][0] is None: self.draw_text('Waiting for SWI 0...', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+			if scr[3][0] is None: self.draw_text('No screen data', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 			else: self.draw_text(f'Displaying screen data {"@ "+format(scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 		elif self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ "+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
-		elif scr[3][disp_lcd-1] is not None: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
+		elif (disp_lcd != 0 and scr[3][disp_lcd-1] is not None) or disp_lcd == 0: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
 		if config.hardware_id == 5:
 			if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(scr[3][disp_lcd-1] + scr[1]*scr[2] + i*scr[1], scr[1]) for i in range(scr[2]))
 			else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*scr[0], scr[1], 8) for i in range(scr[2]))
 			screen_data_status_bar, screen_data = self.get_scr_data_cwii(scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
-		elif scr[3][disp_lcd-1] is not None: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
+		elif (disp_lcd != 0 and scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.sim.sfr[0x30] & 7
 		scr_mode = self.sim.sfr[0x31] & 7
@@ -1644,7 +1645,7 @@ class Sim:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
 				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
 					for x in range(scr[4]):
-						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*config.pix, config.pix, config.pix))
+						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*self.pix_hi, config.pix, self.pix_hi))
 
 		if self.single_step: self.step = False
 		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
