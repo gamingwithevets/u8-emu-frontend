@@ -1563,6 +1563,7 @@ class Sim:
 
 	def reset_core(self):
 		self.sim.u8_reset()
+		self.stop_mode = False
 		self.prev_csr_pc = None
 		self.reg_display.print_regs()
 		self.data_mem.get_mem()
