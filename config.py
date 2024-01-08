@@ -21,6 +21,12 @@ rom8 = False
 # 6 = TI MathPrint (ML620418A)
 hardware_id = 3
 
+# Toggle fx-5800P mode. Optional; default = False. Hardware type 2 only.
+is_5800p = False
+
+# Path to the flash ROM. fx-5800P mode only.
+#flash_rom_file = None
+
 # Toggle real/emulator ROM mode. *
 real_hardware = False
 
@@ -30,7 +36,7 @@ real_hardware = False
 # 1 = Use F044H for KO (inverted)
 ko_mode = 0
 
-# Pd value. Set on startup. Emulator only.
+# Pd value. Set on startup.
 # If omitted, Pd value is not set.
 pd_value = 0
 

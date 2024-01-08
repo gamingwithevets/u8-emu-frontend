@@ -139,7 +139,7 @@ def uint8_ptr(array, offset):
 ##
 
 class Core:
-	def __init__(self, sim, rom):
+	def __init__(self, sim, rom, flash):
 		self.sim = sim
 		ko_mode = self.sim.ko_mode
 
@@ -147,6 +147,7 @@ class Core:
 
 		# Initialise memory
 		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
+		if config.hardware_id == 2 and self.sim.is_5800p: self.flash_mem = (ctypes.c_uint8 * len(flash))(*flash)
 
 		rwin_sizes = {
 		0: 0xdfff,
@@ -176,7 +177,7 @@ class Core:
 
 		self.data_mem = (ctypes.c_uint8 * self.sdata[1])()
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
-		if not config.real_hardware and hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
+		if hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
 
 		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
@@ -197,7 +198,7 @@ class Core:
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F001, 0x0FFFF,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_sfr_f, write_sfr_f))),
 		]
 
-		if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
+		if config.real_hardware and config.hardware_id != 2: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
 
 		if config.hardware_id == 4: regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
@@ -221,6 +222,13 @@ class Core:
 		else:
 			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))))
 			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))))
+			if config.hardware_id == 2 and self.sim.is_5800p:
+				regions.extend((
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.flash_mem, 0x20000))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.flash_mem, 0x00000))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
+				))
+			else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
@@ -511,12 +519,12 @@ class Jump(tk.Toplevel):
 		self.sim = sim
 
 		self.withdraw()
-		self.geometry('250x100')
+		self.geometry('250x120')
 		self.resizable(False, False)
 		self.title('Jump to address')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = 'Input new values for CSR and PC.\n(please input hex bytes)', justify = 'center').pack()
+		ttk.Label(self, text = 'Input new values for CSR and PC.\nStop mode will be disabled after jumping.\n(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
 		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
@@ -535,6 +543,7 @@ class Jump(tk.Toplevel):
 
 		self.sim.sim.core.regs.csr = int(csr_entry, 16) if csr_entry else 0
 		self.sim.sim.core.regs.pc = int(pc_entry, 16) if pc_entry else 0
+		self.sim.stop_mode = False
 		self.sim.reg_display.print_regs()
 		self.withdraw()
 
@@ -690,6 +699,7 @@ class DataMem(tk.Toplevel):
 		if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 		elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
 		elif config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
+		if config.hardware_id == 2 and self.sim.is_5800p: segments.append('Flash RAM (04:0000H - 04:7FFFH)')
 
 		self.segment_var = tk.StringVar(value = segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments)
@@ -718,6 +728,7 @@ class DataMem(tk.Toplevel):
 			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
 			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
 			elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
+			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
 
 			self.code_text['state'] = 'normal'
 			yview_bak = self.code_text.yview()[0]
@@ -809,6 +820,9 @@ class RegDisplay(tk.Toplevel):
 		self.print_regs()
 
 	def print_regs(self):
+		try: wm_state = self.wm_state()
+		except Exception: return
+
 		regs = self.sim.sim.core.regs
 		last_swi = self.sim.sim.core.last_swi
 
@@ -818,7 +832,7 @@ class RegDisplay(tk.Toplevel):
 		psw = regs.psw
 		psw_f = format(psw, '08b')
 
-		if self.wm_state() == 'normal': self.info_label['text'] = f'''\
+		if wm_state == 'normal': self.info_label['text'] = f'''\
 === REGISTERS ===
 
 General registers:
@@ -877,6 +891,7 @@ class Sim:
 		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
 		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 		self.pix_hi = config.pix_hi if hasattr(config, 'pix_hi') else config.pix
+		self.is_5800p = config.is_5800p if hasattr(config, 'is_5800p') else False
 
 		if self.rom8:
 			tags = list(tool8.read8(config.rom_file))
@@ -962,6 +977,13 @@ class Sim:
 				logging.error('ROM size cannot be odd')
 				sys.exit()
 
+		if config.hardware_id == 2 and self.is_5800p:
+			flash = open(config.flash_rom_file, 'rb').read()
+			if len(flash) % 2 != 0:
+				logging.error('Flash ROM size cannot be odd')
+				sys.exit()
+		else: flash = None
+
 		try:
 			im = PIL.Image.open(config.interface_path)
 			size = im.size
@@ -972,7 +994,7 @@ class Sim:
 		if config.hardware_id == 2: self.ko_mode = 1 
 		elif config.hardware_id != 3: self.ko_mode = 0
 
-		self.sim = Core(self, rom)
+		self.sim = Core(self, rom, flash)
 
 		self.root = DebounceTk()
 		self.root.geometry(f'{config.width}x{config.height}')
@@ -1015,6 +1037,7 @@ class Sim:
 							self.stop_mode = False
 							self.write_emu_kb(1, 1 << k[0])
 							self.write_emu_kb(2, 1 << k[1])
+						else: self.sim.sfr[0x14] = 2
 
 		def release_cb(event):
 			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
@@ -1084,11 +1107,33 @@ class Sim:
 		self.screen_stuff = {
 	   # hwid: (alloc, used, rows,buffers,          columns)
 			0: (0x8,   0x8,  4,   [],               64),
-			2: (0x10,  0xc,  32,  [0x8600],         96),
+			2: (0x10,  0xc,  32,  [0x80e0 if self.is_5800p else 0x8600], 96),
 			3: (0x10,  0xc,  32,  [0x87d0],         96),
 			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
 			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
 			6: (0x8,   0x8,  192, [None],         64),
+		}
+
+		self.int_table = {
+		# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
+			(0x14, 0): (0x08, None, None, 'WDTINT'),
+			(0x14, 1): (0x0a, 0x10, 1,    'XI0INT'),
+		 	(0x14, 2): (0x0c, 0x10, 2,    'XI1INT'),
+			(0x14, 3): (0x0e, 0x10, 3,    'XI2INT'),
+			(0x14, 4): (0x10, 0x10, 4,    'XI3INT'),
+			(0x14, 5): (0x12, 0x10, 5,    'TM0INT'),
+			(0x14, 6): (0x14, 0x10, 6,    'L256SINT'),
+			(0x14, 7): (0x16, 0x10, 7,    'L1024SINT'),
+			(0x15, 0): (0x18, 0x11, 0,    'L4096SINT'),
+			(0x15, 1): (0x1a, 0x11, 1,    'L16384SINT'),
+			(0x15, 2): (0x1c, 0x11, 2,    'SIO0INT'),
+			(0x15, 3): (0x1e, 0x11, 3,    'I2C0INT'),
+			(0x15, 4): (0x20, 0x11, 4,    'I2C1INT'),
+			(0x15, 5): (0x22, 0x11, 5,    'BENDINT'),
+			(0x15, 6): (0x24, 0x11, 6,    'BLOWINT'),
+			(0x15, 7): (0x26, 0x11, 7,    'RTCINT'),
+			(0x16, 0): (0x28, 0x12, 0,    'AL0INT'),
+			(0x16, 1): (0x2a, 0x12, 1,    'AL1INT'),
 		}
 
 		# first item can be anything
@@ -1291,8 +1336,6 @@ class Sim:
 	def keyboard(self):
 		ki = 0xff
 		if len(self.keys_pressed) > 0:
-			self.sim.sfr[0x14] = 2
-			
 			ki_filter = self.sim.sfr[0x42]
 			ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
 
@@ -1348,6 +1391,31 @@ class Sim:
 				if not config.real_hardware:
 					self.write_emu_kb(1, 0)
 					self.write_emu_kb(2, 0)
+
+	@staticmethod
+	def find_bit(num): return (num & -num).bit_length() - 1
+
+	def check_ints(self):
+		for i in range(0x14, 0x16):
+			if self.sim.sfr[i] == 0: continue
+			self.raise_int(i, self.find_bit(self.sim.sfr[i]))
+
+	def raise_int(self, irq, bit):
+		intdata = self.int_table[(irq, bit)]
+		if intdata[1] is not None and intdata[2] is not None: cond = self.sim.sfr[intdata[1]] & (1 << intdata[2])
+		else: cond = True
+
+		if cond:
+			#logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
+			self.sim.sfr[irq] &= ~(1 << bit)
+			elevel = 2 if intdata[3] == 'WDTINT' else 1
+			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
+			self.sim.core.regs.ecsr[elevel-1] = self.sim.core.regs.csr
+			self.sim.core.regs.epsw[elevel-1] = self.sim.core.regs.psw
+			self.sim.core.regs.psw &= 0b11111100 if elevel == 2 else 0b11110100
+			self.sim.core.regs.psw |= elevel
+			self.sim.core.regs.csr = 0
+			self.sim.core.regs.pc = (self.sim.code_mem[intdata[0]+1] << 8) + self.sim.code_mem[intdata[0]]
 
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
@@ -1414,6 +1482,7 @@ class Sim:
 		self.keyboard()
 		if self.stop_mode: self.timer()
 		else: self.sbycon()
+		if config.hardware_id != 6: self.check_ints()
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
