@@ -172,6 +172,7 @@ class Core:
 			0x60: 1,
 			0x901: 0,
 			}
+		elif config.hardware_id == 2 and self.sim.is_5800p: self.force[0x46] = 4
 
 		self.sdata = data_size[config.hardware_id if config.hardware_id in data_size else 3]
 
