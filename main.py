@@ -992,7 +992,9 @@ class Sim:
 			size = im.size
 			if not hasattr(config, 'width'):  config.width  = size[0]
 			if not hasattr(config, 'height'): config.height = size[1]
-		except (AttributeError, IOError): pass
+		except (AttributeError, IOError) as e:
+			logging.error(e)
+			sys.exit()
 
 		if config.hardware_id == 2: self.ko_mode = 1 
 		elif config.hardware_id != 3: self.ko_mode = 0
@@ -1582,27 +1584,52 @@ class Sim:
 			screen_data_status_bar = []
 			screen_data = [[3 if scr_bytes[i][j] & (1 << k) else 0 for j in range(7, -1, -1) for k in range(7, -1, -1)] for i in range(192)]
 
+
 		else:
-			screen_data_status_bar = [
-			sbar[0]   & (1 << 4),  # [S]
-			sbar[0]   & (1 << 2),  # [A]
-			sbar[1]   & (1 << 4),  # M
-			sbar[1]   & (1 << 1),  # STO
-			sbar[2]   & (1 << 6),  # RCL
-			sbar[3]   & (1 << 6),  # STAT
-			sbar[4]   & (1 << 7),  # CMPLX
-			sbar[5]   & (1 << 6),  # MAT
-			sbar[5]   & (1 << 1),  # VCT
-			sbar[7]   & (1 << 5),  # [D]
-			sbar[7]   & (1 << 1),  # [R]
-			sbar[8]   & (1 << 4),  # [G]
-			sbar[8]   & (1 << 0),  # FIX
-			sbar[9]   & (1 << 5),  # SCI
-			sbar[0xa] & (1 << 6),  # Math
-			sbar[0xa] & (1 << 3),  # ▼
-			sbar[0xb] & (1 << 7),  # ▲
-			sbar[0xb] & (1 << 4),  # Disp
-			]
+			is_5800p = config.is_5800p if hasattr(config, 'is_5800p') else False
+			if config.hardware_id == 2 and is_5800p:
+				screen_data_status_bar = [
+				sbar[0]   & (1 << 4),  # [S]
+				sbar[0]   & (1 << 2),  # [A]
+				sbar[1]   & (1 << 4),  # M
+				sbar[1]   & (1 << 1),  # STO
+				sbar[2]   & (1 << 6),  # RCL
+				sbar[3]   & (1 << 6),  # SD
+				sbar[4]   & (1 << 7),  # REG
+				sbar[5]   & (1 << 6),  # FMLA
+				sbar[5]   & (1 << 4),  # PRGM
+				sbar[5]   & (1 << 1),  # END
+				sbar[7]   & (1 << 5),  # [D]
+				sbar[7]   & (1 << 1),  # [R]
+				sbar[8]   & (1 << 4),  # [G]
+				sbar[8]   & (1 << 0),  # FIX
+				sbar[9]   & (1 << 5),  # SCI
+				sbar[0xa] & (1 << 6),  # Math
+				sbar[0xa] & (1 << 3),  # ▼
+				sbar[0xb] & (1 << 7),  # ▲
+				sbar[0xb] & (1 << 4),  # [Disp]
+				]
+			else:
+				screen_data_status_bar = [
+				sbar[0]   & (1 << 4),  # [S]
+				sbar[0]   & (1 << 2),  # [A]
+				sbar[1]   & (1 << 4),  # M
+				sbar[1]   & (1 << 1),  # STO
+				sbar[2]   & (1 << 6),  # RCL
+				sbar[3]   & (1 << 6),  # STAT
+				sbar[4]   & (1 << 7),  # CMPLX
+				sbar[5]   & (1 << 6),  # MAT
+				sbar[5]   & (1 << 1),  # VCT
+				sbar[7]   & (1 << 5),  # [D]
+				sbar[7]   & (1 << 1),  # [R]
+				sbar[8]   & (1 << 4),  # [G]
+				sbar[8]   & (1 << 0),  # FIX
+				sbar[9]   & (1 << 5),  # SCI
+				sbar[0xa] & (1 << 6),  # Math
+				sbar[0xa] & (1 << 3),  # ▼
+				sbar[0xb] & (1 << 7),  # ▲
+				sbar[0xb] & (1 << 4),  # Disp
+				]
 			
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
 
@@ -1687,11 +1714,16 @@ class Sim:
 		scr_range = self.sim.sfr[0x30] & 7
 		scr_mode = self.sim.sfr[0x31] & 7
 
-		if ((not disp_lcd and scr_mode in (5, 6)) or disp_lcd) and self.status_bar is not None:
-			for i in range(len(screen_data_status_bar)):
-				try: crop = config.status_bar_crops[i]
-				except IndexError: continue
-				if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
+			if self.status_bar is not None and hasattr(config, 'status_bar_crops'):
+				for i in range(len(screen_data_status_bar)):
+					try: crop = config.status_bar_crops[i]
+					except IndexError: continue
+					if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+			else:
+				sbar = [scr_bytes[0][j] & (1 << k) for j in range(scr[1]) for k in range(7, -1, -1)]
+				for x in range(scr[4]):
+					if sbar[x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi - self.pix_hi, config.pix, self.pix_hi))
 	
 		if config.hardware_id == 0:
 			offset = 0
