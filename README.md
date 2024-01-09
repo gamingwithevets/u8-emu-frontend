@@ -17,7 +17,8 @@ gcc u8_emu/src/core/*.c -O3 -fPIC -shared -o core.so
 4. `pip install -r requirements.txt`
 5. Run `python main.py` (or `python3 main.py`) and you're done.
 
-NOTE: **This frontend uses CairoSVG.** That means if you're on Windows or macOS you need to obtain the necessary libcairo library for your platform and add it to your PATH or copy it to the root of this repo.
+NOTE: **This frontend uses CairoSVG.** That means if you're on Windows or macOS 
+ you need to obtain the necessary libcairo library for your platform and add it to your PATH or copy it to the root of this repo. However **it is only needed for loading ROM8 SVG images**, so you don't have to worry about it too much unless you use a ROM8 with an SVG image.
 
 # Usage
 When you open the emulator, you can right-click to see the available functions of the emulator. To step, press the backslash (`\`) key.
@@ -39,5 +40,3 @@ and extract the right bitmaps.
 
 # ROM8 support
 This frontend supports the [ROM8 file format](https://hackmd.io/@pitust/HkgeNr6Mp) created by [pitust](https://github.com/pitust). See `config.py` for how to set it up.
-
-Note that ROM8 support is currently incomplete.
