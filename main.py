@@ -16,6 +16,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.font
 import tkinter.messagebox
+import tkinter.filedialog
 from enum import IntEnum
 
 sys.path.append('pyu8disas')
@@ -730,6 +731,7 @@ class DataMem(tk.Toplevel):
 			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
 			elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
 			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
+			else: data = '[No region selected yet.]'
 
 			self.code_text['state'] = 'normal'
 			yview_bak = self.code_text.yview()[0]
@@ -1156,6 +1158,7 @@ class Sim:
 		extra_funcs.add_command(label = 'ROM info', command = self.calc_checksum)
 		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
 		extra_funcs.add_command(label = 'Modify general registers', command = self.gp_modify.open)
+		if config.hardware_id == 2 and self.is_5800p: extra_funcs.add_command(label = 'Save flash ROM', command = self.save_flash)
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		
 		options = tk.Menu(self.rc_menu, tearoff = 0)
@@ -1485,6 +1488,10 @@ class Sim:
 		else: self.sbycon()
 		if config.hardware_id != 6: self.check_ints()
 
+	def save_flash(self):
+		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
+		if f is not None: f.write(bytes(self.sim.flash_mem))
+
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
 
@@ -1657,7 +1664,7 @@ class Sim:
 		self.screen.fill((214, 227, 214))
 		if self.interface is not None: self.screen.blit(self.interface, self.interface_rect)
 		try:
-			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGBA_ADD)
+			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGB_ADD)
 		except RuntimeError: pass
 
 		if config.hardware_id in self.screen_stuff: scr = self.screen_stuff[config.hardware_id]
