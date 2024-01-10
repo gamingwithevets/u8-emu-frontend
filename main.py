@@ -1125,24 +1125,24 @@ class Sim:
 
 		self.int_table = {
 		# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
-			(0x14, 0): (0x08, None, None, 'WDTINT'),
+			(0x14, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
 			(0x14, 1): (0x0a, 0x10, 1,    'XI0INT'),
 		 	(0x14, 2): (0x0c, 0x10, 2,    'XI1INT'),
 			(0x14, 3): (0x0e, 0x10, 3,    'XI2INT'),
 			(0x14, 4): (0x10, 0x10, 4,    'XI3INT'),
-			(0x14, 5): (0x12, 0x10, 5,    'TM0INT'),
+			(0x14, 5): (0x12, 0x10, 5,    'TM0INT'),     # Timer 0 interrupt
 			(0x14, 6): (0x14, 0x10, 6,    'L256SINT'),
 			(0x14, 7): (0x16, 0x10, 7,    'L1024SINT'),
 			(0x15, 0): (0x18, 0x11, 0,    'L4096SINT'),
 			(0x15, 1): (0x1a, 0x11, 1,    'L16384SINT'),
-			(0x15, 2): (0x1c, 0x11, 2,    'SIO0INT'),
-			(0x15, 3): (0x1e, 0x11, 3,    'I2C0INT'),
-			(0x15, 4): (0x20, 0x11, 4,    'I2C1INT'),
+			(0x15, 2): (0x1c, 0x11, 2,    'SIO0INT'),    # Synchronous serial port 0 interrupt
+			(0x15, 3): (0x1e, 0x11, 3,    'I2C0INT'),    # I²C bus 0 interrupt
+			(0x15, 4): (0x20, 0x11, 4,    'I2C1INT'),    # I²C bus 1 interrupt
 			(0x15, 5): (0x22, 0x11, 5,    'BENDINT'),
 			(0x15, 6): (0x24, 0x11, 6,    'BLOWINT'),
-			(0x15, 7): (0x26, 0x11, 7,    'RTCINT'),
-			(0x16, 0): (0x28, 0x12, 0,    'AL0INT'),
-			(0x16, 1): (0x2a, 0x12, 1,    'AL1INT'),
+			(0x15, 7): (0x26, 0x11, 7,    'RTCINT'),     # Real-time clock interrupt
+			(0x16, 0): (0x28, 0x12, 0,    'AL0INT'),     # RTC alarm 0 interrupt
+			(0x16, 1): (0x2a, 0x12, 1,    'AL1INT'),     # RTC alarm 1 interrupt
 		}
 
 		# first item can be anything
