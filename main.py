@@ -192,6 +192,8 @@ class Core:
 		write_sfr_f = write_functype(self.write_sfr)
 		read_dsr_f = read_functype(self.read_dsr)
 		write_dsr_f = write_functype(self.write_dsr)
+		read_flash_f = read_functype(self.read_flash)
+		write_flash_f = write_functype(self.write_flash)
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,       len(rom) - 1,                    u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
@@ -228,8 +230,8 @@ class Core:
 			if config.hardware_id == 2 and self.sim.is_5800p:
 				regions.extend((
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.flash_mem, 0x20000))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.flash_mem, 0x00000))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_flash_f, write_flash_f))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_flash_f))),
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
 				))
 			else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
@@ -307,13 +309,19 @@ class Core:
 			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
 			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 
+	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
 	def write_dsr(self, core, seg, addr, value):
 		self.sfr[0] = value
 		self.core.regs.dsr = value
 
-	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
-
 	def battery(self, core, seg, addr): return 0xff
+
+	def read_flash(self, core, seg, addr):
+		if seg == 4: seg = 2
+		return self.flash_mem[(seg % 8 << 16) + addr]
+	def write_flash(self, core, seg, addr, value):
+		#time.sleep(0.01)
+		self.flash_mem[(seg % 8 << 16) + addr] = value
 
 # https://github.com/JamesGKent/python-tkwidgets/blob/master/Debounce.py
 class Debounce():
