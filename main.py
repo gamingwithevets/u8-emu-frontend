@@ -1054,7 +1054,9 @@ class Sim:
 							self.stop_mode = False
 							self.write_emu_kb(1, 1 << k[0])
 							self.write_emu_kb(2, 1 << k[1])
-						else: self.sim.sfr[0x14] = 2
+						else:
+							self.sim.sfr[0x14] = 2
+							if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
 
 		def release_cb(event):
 			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
@@ -1214,6 +1216,8 @@ class Sim:
 		self.last_time = 0
 		self.passed_time = 0
 
+		self.int_timer = 0
+
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 
 	def set_enable_ips(self):
@@ -1354,13 +1358,11 @@ class Sim:
 	def keyboard(self):
 		ki = 0xff
 		if len(self.keys_pressed) > 0:
-			ki_filter = self.sim.sfr[0x42]
 			ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
 
 			try:
 				for val in self.keys_pressed:
 					if val == None: continue
-					if ki_filter & (1 << val[0]): self.stop_mode = False
 					if ko & (1 << val[1]): ki &= ~(1 << val[0])
 			except RuntimeError: pass
 
@@ -1424,7 +1426,7 @@ class Sim:
 		else: cond = True
 
 		if cond:
-			logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
+			#logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
 			self.sim.sfr[irq] &= ~(1 << bit)
 			elevel = 2 if intdata[3] == 'WDTINT' else 1
 			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
@@ -1434,6 +1436,8 @@ class Sim:
 			self.sim.core.regs.psw |= elevel
 			self.sim.core.regs.csr = 0
 			self.sim.core.regs.pc = (self.sim.code_mem[intdata[0]+1] << 8) + self.sim.code_mem[intdata[0]]
+
+			self.int_timer = 1
 
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
@@ -1500,7 +1504,8 @@ class Sim:
 		self.keyboard()
 		if self.stop_mode: self.timer()
 		else: self.sbycon()
-		if config.hardware_id != 6 and (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)): self.check_ints()
+		if config.hardware_id != 6 and (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
+		if self.int_timer != 0: self.int_timer -= 1
 
 	def save_flash(self):
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
