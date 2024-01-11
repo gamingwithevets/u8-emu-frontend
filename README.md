@@ -1,5 +1,5 @@
-This is a **frontend** for [Fraser Price / Fraserbc / Delta](https://github.com/Fraserbc)'s [u8_emu](https://github.com/Fraserbc/u8_emu) emulator core, written in Python.  
-**NOTE:** This frontend uses a **fork** of the aforementioned emulator core by [pitust](https://github.com/Fraserbc).  
+This is a **frontend** for [Fraser Price / Fraserbc / Delta](https://github.com/Fraserbc)'s [u8_emu](https://github.com/Fraserbc/u8_emu) emulator core, written in mostly Python, with a small bit of C code included. 
+**NOTE:** This frontend uses a **fork** of the aforementioned emulator core.  
 Most of the code was based on the [SimU8 frontend](https://github.com/gamingwithevets/simu8-frontend).
 
 This frontend serves as a replacement to Delta's own frontend that uses `ncurses`.
@@ -11,7 +11,7 @@ git clone --recursive https://github.com/gamingwithevets/u8-emu-frontend.git
 ```
 2. Go to the repo directory and run the command below (this assumes the submodule is located in the `u8_emu` directory):
 ```shell
-gcc u8_emu/src/core/*.c -O3 -fPIC -shared -o core.so
+gcc u8_emu/src/core/*.c peripheral.c -O3 -fPIC -shared -o core.so
 ```
 3. Edit the `config.py` file as needed.
 4. `pip install -r requirements.txt`

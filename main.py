@@ -232,7 +232,7 @@ class Core:
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(uint8_ptr(self.flash_mem, 0x00000))),
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
 				))
-			else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
+			elif config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
@@ -241,9 +241,7 @@ class Core:
 		self.core.regs.sp = rom[0] | rom[1] << 8
 		self.core.regs.pc = rom[2] | rom[3] << 8
 	
-	def u8_step(self):
-		self.sfr[0] = self.core.regs.dsr
-		sim_lib.u8_step(ctypes.pointer(self.core))
+	def core_step(self): sim_lib.core_step(ctypes.pointer(self.core), config.real_hardware, config.hardware_id, self.sim.is_5800p)
 
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 	
@@ -872,7 +870,7 @@ EPSW3           {regs.epsw[2]:02X}
 Other information:
 Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
 Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
-STOP acceptor            1 [{'x' if self.sim.stop_accept[0] else ' '}]  2 [{'x' if  self.sim.stop_accept[1] else ' '}]
+STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 {('Instructions per second  ' + format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else ''}\
@@ -1196,9 +1194,8 @@ class Sim:
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
-		self.stop_accept = [False, False]
+		self.stop_accept = self.get_var('stop_accept', ctypes.c_bool * 2)
 		self.stop_mode = False
-		self.wdtcon_clr = False
 
 		self.nsps = 1e9
 		self.max_ns_per_update = 1e9
@@ -1210,6 +1207,8 @@ class Sim:
 		self.int_timer = 0
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
+
+	def get_var(self, var, typ): return typ.in_dll(sim_lib, var)
 
 	def set_enable_ips(self):
 		self.enable_ips = self.enable_ips_tk.get()
@@ -1364,9 +1363,9 @@ class Sim:
 
 	def sbycon(self):
 		if self.sim.sfr[9] & (1 << 1):
-			if all(self.stop_accept):
+			if all(self.stop_accept[:]):
 				self.stop_mode = True
-				self.stop_accept = [False, False]
+				self.stop_accept[:] = (ctypes.c_bool * 2)()[:]
 				self.sim.sfr[8] = 0
 				self.sim.sfr[0x22] = 0
 				self.sim.sfr[0x23] = 0
@@ -1428,7 +1427,7 @@ class Sim:
 			self.sim.core.regs.csr = 0
 			self.sim.core.regs.pc = (self.sim.code_mem[intdata[0]+1] << 8) + self.sim.code_mem[intdata[0]]
 
-			self.int_timer = 1
+			self.int_timer = 2
 
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
@@ -1436,11 +1435,8 @@ class Sim:
 			if self.write_brkpoint != None: addr_write = self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16)
 			wdp = self.sim.sfr[0xe] & 1
 
-			try: self.sim.u8_step()
-			except Exception: pass
-			self.sim.core.regs.csr %= 2 if config.real_hardware and config.hardware_id == 3 else 0x10
-			self.sim.core.regs.pc &= 0xfffe
-			if config.hardware_id == 6: self.sim.core.regs.sp &= 0xfffe
+			try: self.sim.core_step()
+			except Exception as e: logging.error(e)
 
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
@@ -1457,22 +1453,6 @@ class Sim:
 					#	self.set_single_step(True)
 					#	self.reg_display.open()
 					#	self.keys_pressed.clear()
-
-			stpacp = self.sim.sfr[8]
-			if self.stop_accept[0]:
-				if not self.stop_accept[1]:
-					if stpacp & 0xa0 == 0xa0: self.stop_accept[1] = True
-					elif stpacp & 0x50 != 0x50: self.stop_accept[0] = False
-			elif stpacp & 0x50 == 0x50: self.stop_accept[0] = True
-
-			if config.hardware_id == 6:
-				wdtcon = self.sim.sfr[0xe]
-				if self.wdtcon_clr:
-					if wdtcon == 0xa4 and wdp == 1:
-						self.sim.sfr[0xe] = 0
-						self.wdtcon_clr = False
-					elif wdtcon != 0x5b: self.wdtcon_clr = False
-				elif wdtcon == 0x5b and wdp == 0: self.wdtcon_clr = True
 
 			if self.enable_ips:
 				if self.ips_ctr % 1000 == 0:
@@ -1790,6 +1770,8 @@ if __name__ == '__main__':
 	sim_lib = ctypes.CDLL(os.path.abspath(config.shared_lib))
 
 	sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
+
+	sim_lib.core_step.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_bool, ctypes.c_int, ctypes.c_bool]
 
 	sim_lib.read_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
 	sim_lib.read_reg_r.restype = ctypes.c_uint8
