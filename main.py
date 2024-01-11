@@ -1424,7 +1424,7 @@ class Sim:
 		else: cond = True
 
 		if cond:
-			#logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
+			logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
 			self.sim.sfr[irq] &= ~(1 << bit)
 			elevel = 2 if intdata[3] == 'WDTINT' else 1
 			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
@@ -1500,7 +1500,7 @@ class Sim:
 		self.keyboard()
 		if self.stop_mode: self.timer()
 		else: self.sbycon()
-		if config.hardware_id != 6: self.check_ints()
+		if config.hardware_id != 6 and (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)): self.check_ints()
 
 	def save_flash(self):
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
