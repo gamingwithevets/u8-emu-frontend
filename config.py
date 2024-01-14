@@ -12,6 +12,10 @@ rom_file = 'rom.bin'
 # ROM8 mode; set to True if a ROM8 file was provided. (optional; default = False)
 rom8 = False
 
+# Labels files for debugging. (optional)
+# Please provide file paths.
+labels = []
+
 # Hardware type. *
 # 0 = SOLAR II
 # 2 = ES, FC, fx-5800P

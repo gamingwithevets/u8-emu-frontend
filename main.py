@@ -26,6 +26,7 @@ from enum import IntEnum
 
 sys.path.append('pyu8disas')
 from pyu8disas import main as disas_main
+from pyu8disas.labeltool import labeltool
 from tool8 import tool8
 import platform
 
@@ -819,6 +820,7 @@ class RegDisplay(tk.Toplevel):
 		self.geometry('400x800')
 		self.title('Register display')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
+		self.bind('\\', lambda x: self.sim.set_step())
 		self['bg'] = config.console_bg
 
 		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
@@ -834,6 +836,8 @@ class RegDisplay(tk.Toplevel):
 
 		regs = self.sim.sim.core.regs
 		last_swi = self.sim.sim.core.last_swi
+		ins, ins_len = self.sim.decode_instruction()
+		label = self.sim.get_instruction_label()
 
 		csr = regs.csr
 		pc = regs.pc
@@ -852,9 +856,10 @@ R8   R9   R10  R11  R12  R13  R14  R15
 ''' + '   '.join(f'{regs.gp[8+i]:02X}' for i in range(8)) + f'''
 
 Control registers:
-CSR:PC          {csr:X}:{pc:04X}H (prev. value: {self.sim.prev_csr_pc})
-Words @ CSR:PC  ''' + ' '.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(3)) + f'''
-Instruction     {self.sim.decode_instruction()}
+CSR:PC          {csr:X}:{pc:04X}H{" ("+label+")" if label is not None else ""}
+Previous CSR:PC {self.sim.prev_csr_pc} -- Prev. Prev.: {self.sim.prev_prev_csr_pc}
+Opcode          ''' + ' '.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(ins_len // 2)) + f'''
+Instruction     {ins}
 SP              {sp:04X}H
 Words @ SP      ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(0, 8, 2)) + f'''
                 ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(8, 16, 2)) + f'''
@@ -1033,6 +1038,13 @@ class Sim:
 		self.gp_modify = GPModify(self)
 		self.reg_display = RegDisplay(self)
 		self.disas = disas_main.Disasm()
+		self.labels = {}
+		if hasattr(config, 'labels'):
+			for file in config.labels:
+				labels, data_labels, data_bit_labels = labeltool.load_labels(file, 0)
+				for key in labels: self.labels[key] = self.disas.labels[key] = labels[key]
+				for key in data_labels: self.disas.data_labels[key] = data_labels[key]
+				for key in data_bit_labels: self.disas.data_bit_labels[key] = data_bit_labels[key]
 
 		embed_pygame = tk.Frame(self.root, width = config.width, height = config.height)
 		embed_pygame.pack(side = 'left')
@@ -1043,16 +1055,18 @@ class Sim:
 				p = v[0]
 				if (event.type == tk.EventType.ButtonPress and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
 				or (event.type == tk.EventType.KeyPress and (event.char if self.use_char else event.keysym.lower()) in v[1:]):
-					self.keys_pressed.add(k)
-					if k is None: self.reset_core()
-					else:
-						if not config.real_hardware:
-							self.stop_mode = False
-							self.write_emu_kb(1, 1 << k[0])
-							self.write_emu_kb(2, 1 << k[1])
+					if config.hardware_id != 6:
+						self.keys_pressed.add(k)
+						if k is None: self.reset_core()
 						else:
-							self.sim.sfr[0x14] = 2
-							if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
+							if not config.real_hardware:
+								self.stop_mode = False
+								self.write_emu_kb(1, 1 << k[0])
+								self.write_emu_kb(2, 1 << k[1])
+							else:
+								self.sim.sfr[0x14] = 2
+								if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
+					elif len(self.keys_pressed) == 0: self.keys_pressed.add(k)
 
 		def release_cb(event):
 			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
@@ -1126,12 +1140,14 @@ class Sim:
 			3: (0x10,  0xc,  32,  [0x87d0],         96),
 			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
 			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
-			6: (0x8,   0x8,  192, [None],         64),
+			6: (0x8,   0x8,  192, [None],           64),
 		}
 
 		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
 		else: self.scr = self.screen_stuff[3]
-		self.display = pygame.Surface((self.scr[4]*config.pix, (self.scr[2] - 1)*self.pix_hi + self.sbar_hi))
+		
+		if config.hardware_id == 6: self.display = pygame.Surface((self.scr[2]*config.pix, (self.scr[4])*self.pix_hi + self.sbar_hi))
+		else: self.display = pygame.Surface((self.scr[4]*config.pix, (self.scr[2] - 1)*self.pix_hi + self.sbar_hi))
 
 		self.int_table = {
 		# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
@@ -1211,6 +1227,7 @@ class Sim:
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
+		self.prev_prev_csr_pc = None
 		self.stop_accept = self.get_var('stop_accept', ctypes.c_bool * 2)
 		self.stop_mode = False
 
@@ -1432,10 +1449,10 @@ class Sim:
 		if intdata[1] is not None and intdata[2] is not None: cond = self.sim.sfr[intdata[1]] & (1 << intdata[2])
 		else: cond = True
 
-		if cond:
+		elevel = 2 if intdata[3] == 'WDTINT' else 1
+		if cond and self.sim.core.regs.psw & 3 >= elevel:
 			#logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
 			self.sim.sfr[irq] &= ~(1 << bit)
-			elevel = 2 if intdata[3] == 'WDTINT' else 1
 			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
 			self.sim.core.regs.ecsr[elevel-1] = self.sim.core.regs.csr
 			self.sim.core.regs.epsw[elevel-1] = self.sim.core.regs.psw
@@ -1455,6 +1472,7 @@ class Sim:
 			try: self.sim.core_step()
 			except Exception as e: logging.error(e)
 
+			if self.prev_csr_pc is not None: self.prev_prev_csr_pc = self.prev_csr_pc
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
 			if config.hardware_id == 6:
@@ -1464,12 +1482,8 @@ class Sim:
 						self.screen_stuff[6][3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
 					elif last_swi == 2:
-						# temporary
-						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
-					#else:
-					#	self.set_single_step(True)
-					#	self.reg_display.open()
-					#	self.keys_pressed.clear()
+						self.sim.core.regs.gp[1] = 0
+						self.sim.core.regs.gp[0] = self.keys_pressed.pop() if len(self.keys_pressed) == 1 else 0
 
 			if self.enable_ips:
 				if self.ips_ctr % 1000 == 0:
@@ -1479,21 +1493,19 @@ class Sim:
 					self.ips_start = cur
 				self.ips_ctr += 1
 
-			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step:
-				self.set_single_step(True)
-				self.reg_display.open()
-				self.keys_pressed.clear()
+			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step: self.hit_brkpoint()
 
-			if self.write_brkpoint != None and self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16) != addr_write:
-				self.set_single_step(True)
-				self.reg_display.open()
-				self.keys_pressed.clear()
-
-		self.keyboard()
+			if self.write_brkpoint != None and self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16) != addr_write: self.hit_brkpoint()
+		if config.hardware_id != 6: self.keyboard()
 		if self.stop_mode: self.timer()
 		else: self.sbycon()
 		if config.hardware_id != 6 and (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
+
+	def hit_brkpoint(self):
+		self.set_single_step(True)
+		self.reg_display.open()
+		self.keys_pressed.clear()
 
 	def save_flash(self):
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
@@ -1524,15 +1536,26 @@ class Sim:
 		self.disas.input_file = b''
 		for i in range(3): self.disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
 		self.disas.addr = 0
-		ins_str, _, dsr_prefix, _ = self.disas.decode_ins()
+		ins_str, ins_len, dsr_prefix, _ = self.disas.decode_ins()
 		if dsr_prefix:
 			self.disas.last_dsr_prefix = ins_str
 			last_dsr_prefix_str = f'DW {int.from_bytes(self.disas.input_file[:2], "little"):04X}'
 			self.disas.addr += 2
-			ins_str, _, _, used_dsr_prefix = self.disas.decode_ins()
-			if used_dsr_prefix: return ins_str
-			else: return last_dsr_prefix_str
-		return ins_str
+			ins_str, inslen, _, used_dsr_prefix = self.disas.decode_ins()
+			ins_len + inslen
+			if used_dsr_prefix: return ins_str, ins_len
+			else: return last_dsr_prefix_str, 2
+		return ins_str, ins_len
+
+	@staticmethod
+	def nearest_num(l, n): return min(l, key = lambda x: (abs(x - n), x))
+
+	def get_instruction_label(self, addr):
+		near = self.nearest_num(self.labels.keys(), addr)
+		if addr > near: return
+		label = self.labels[near]
+		offset = addr - near
+		return f'{label[0] if label[1] else self.labels[label[2]][0]+label[0]}{"+"+hex(offset) if offset != 0 else ""}'
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
 		font = pygame.font.SysFont(font_name, int(size))
@@ -1711,13 +1734,13 @@ class Sim:
 
 		self.clock.tick()
 
-		self.screen.fill((0, 0, 0))
+		self.screen.fill((255, 255, 255))
 		if self.interface is not None: self.screen.blit(self.interface, self.interface_rect)
 		try:
 			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGB_ADD)
 		except RuntimeError: pass
 
-		self.display.fill((214, 227, 214))
+		self.display.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 
 		disp_lcd = self.disp_lcd.get()
 		if config.hardware_id == 6:
@@ -1742,7 +1765,7 @@ class Sim:
 					try: crop = config.status_bar_crops[i]
 					except IndexError: continue
 					if screen_data_status_bar[i]: self.display.blit(self.status_bar, (crop[0], 0), crop)
-			else:
+			elif config.hardware_id != 6:
 				sbar = [scr_bytes[0][j] & (1 << k) for j in range(self.scr[1]) for k in range(7, -1, -1)]
 				for x in range(self.scr[4]):
 					if sbar[x]: pygame.draw.rect(self.display, (0, 0, 0), (x*config.pix, self.sbar_hi - self.pix_hi, config.pix, self.pix_hi))
