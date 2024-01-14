@@ -837,13 +837,13 @@ class RegDisplay(tk.Toplevel):
 		regs = self.sim.sim.core.regs
 		last_swi = self.sim.sim.core.last_swi
 		ins, ins_len = self.sim.decode_instruction()
-		label = self.sim.get_instruction_label()
 
 		csr = regs.csr
 		pc = regs.pc
 		sp = regs.sp
 		psw = regs.psw
 		psw_f = format(psw, '08b')
+		label = self.sim.get_instruction_label((csr << 16) + pc)
 
 		if wm_state == 'normal': self.info_label['text'] = f'''\
 === REGISTERS ===
@@ -1038,13 +1038,17 @@ class Sim:
 		self.gp_modify = GPModify(self)
 		self.reg_display = RegDisplay(self)
 		self.disas = disas_main.Disasm()
-		self.labels = {}
+
+		self.labels = {self.init_pc: ['start', True]}
+		if rom[4] | rom[5] << 8 != self.init_pc: self.labels[rom[4] | rom[5] << 8] = ['brk', True]
 		if hasattr(config, 'labels'):
 			for file in config.labels:
-				labels, data_labels, data_bit_labels = labeltool.load_labels(file, 0)
-				for key in labels: self.labels[key] = self.disas.labels[key] = labels[key]
+				labels, data_labels, data_bit_labels = labeltool.load_labels(open(file), 0)
+				for key in labels: self.labels[key] = labels[key]
 				for key in data_labels: self.disas.data_labels[key] = data_labels[key]
 				for key in data_bit_labels: self.disas.data_bit_labels[key] = data_bit_labels[key]
+		self.labels = {i: self.labels[i] for i in sorted(self.labels.keys())}
+		self.disas.labels = self.labels.copy()
 
 		embed_pygame = tk.Frame(self.root, width = config.width, height = config.height)
 		embed_pygame.pack(side = 'left')
@@ -1536,26 +1540,27 @@ class Sim:
 		self.disas.input_file = b''
 		for i in range(3): self.disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
 		self.disas.addr = 0
-		ins_str, ins_len, dsr_prefix, _ = self.disas.decode_ins()
+		ins_str, ins_len, dsr_prefix, _ = self.disas.decode_ins(True)
 		if dsr_prefix:
 			self.disas.last_dsr_prefix = ins_str
 			last_dsr_prefix_str = f'DW {int.from_bytes(self.disas.input_file[:2], "little"):04X}'
 			self.disas.addr += 2
-			ins_str, inslen, _, used_dsr_prefix = self.disas.decode_ins()
+			ins_str, inslen, _, used_dsr_prefix = self.disas.decode_ins(True)
 			ins_len + inslen
 			if used_dsr_prefix: return ins_str, ins_len
 			else: return last_dsr_prefix_str, 2
 		return ins_str, ins_len
 
 	@staticmethod
-	def nearest_num(l, n): return min(l, key = lambda x: (abs(x - n), x))
+	def nearest_num(l, n): return max([i for i in l if i <= n], default = None)
 
 	def get_instruction_label(self, addr):
 		near = self.nearest_num(self.labels.keys(), addr)
-		if addr > near: return
+		if near is None: return
 		label = self.labels[near]
 		offset = addr - near
-		return f'{label[0] if label[1] else self.labels[label[2]][0]+label[0]}{"+"+hex(offset) if offset != 0 else ""}'
+		offset_str = hex(offset) if offset > 9 else str(offset)
+		return f'{label[0] if label[1] else self.labels[label[2]][0]+label[0]}{"+"+offset_str if offset != 0 else ""}'
 
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
 		font = pygame.font.SysFont(font_name, int(size))
