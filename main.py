@@ -12,6 +12,11 @@ import importlib
 import importlib.util
 import threading
 import traceback
+try:
+	import klembord
+	no_klembord = False
+except ImportError: no_klembord = True
+if os.name == 'nt': import win32clipboard
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.font
@@ -881,7 +886,9 @@ Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 	def fmt_x(val): return 'x' if int(val) else ' '
 
 class Sim:
-	def __init__(self):
+	def __init__(self, no_klembord):
+		self.copyclip = not no_klembord or (no_klembord and os.name == 'nt')
+
 		try:
 			im = PIL.Image.open(config.status_bar_path)
 			size = im.size
@@ -1122,6 +1129,10 @@ class Sim:
 			6: (0x8,   0x8,  192, [None],         64),
 		}
 
+		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
+		else: self.scr = self.screen_stuff[3]
+		self.display = pygame.Surface((self.scr[4]*config.pix, (self.scr[2] - 1)*self.pix_hi + self.sbar_hi))
+
 		self.int_table = {
 		# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
 			(0x14, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
@@ -1164,6 +1175,12 @@ class Sim:
 		extra_funcs.add_command(label = 'Write to data memory', command = self.write.deiconify)
 		extra_funcs.add_command(label = 'Modify general registers', command = self.gp_modify.open)
 		if config.hardware_id == 2 and self.is_5800p: extra_funcs.add_command(label = 'Save flash ROM', command = self.save_flash)
+
+		save_display = tk.Menu(extra_funcs, tearoff = 0)
+		save_display.add_command(label = f'Copy to clipboard{" (klembord package required)" if not self.copyclip else ""}', state = 'normal' if self.copyclip else 'disabled', command = self.save_display)
+		save_display.add_command(label = 'Save as...', command = lambda: self.save_display(False))
+		extra_funcs.add_cascade(label = 'Save display', menu = save_display)
+
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		
 		options = tk.Menu(self.rc_menu, tearoff = 0)
@@ -1482,6 +1499,24 @@ class Sim:
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
 		if f is not None: f.write(bytes(self.sim.flash_mem))
 
+	def save_display(self, clipboard = True):
+		if clipboard:
+			temp = io.BytesIO()
+			if os.name == 'nt':
+				pygame.image.save(self.display, temp, 'BMP')
+				win32clipboard.OpenClipboard()
+				win32clipboard.EmptyClipboard()
+				win32clipboard.SetClipboardData(win32clipboard.CF_DIB, temp.getvalue()[14:])
+				win32clipboard.CloseClipboard()
+			else:
+				pygame.image.save(self.display, temp, 'PNG')
+				klembord.init()
+				klembord.set({'image/png': temp.getvalue()})
+			temp.close()
+		else:
+			f = tk.filedialog.asksaveasfilename(initialfile = 'image.png', defaultextension = '.png', filetypes = [('All Files', '*.*'), ('Common Image Files', '.jpg .jpeg .png .gif .bmp .tiff .webp .svg .ico .raw .heif .heic .jfif')])
+			if f is not None: pygame.image.save(self.display, f)
+
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
 
@@ -1676,28 +1711,27 @@ class Sim:
 
 		self.clock.tick()
 
-		self.screen.fill((214, 227, 214))
+		self.screen.fill((0, 0, 0))
 		if self.interface is not None: self.screen.blit(self.interface, self.interface_rect)
 		try:
 			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGB_ADD)
 		except RuntimeError: pass
 
-		if config.hardware_id in self.screen_stuff: scr = self.screen_stuff[config.hardware_id]
-		else: scr = self.screen_stuff[3]
+		self.display.fill((214, 227, 214))
 
 		disp_lcd = self.disp_lcd.get()
 		if config.hardware_id == 6:
-			if scr[3][0] is None: self.draw_text('No screen data', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
-			else: self.draw_text(f'Displaying screen data {"@ "+format(scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
-		elif self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ "+format(scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+			if self.scr[3][0] is None: self.draw_text('No screen data', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+			else: self.draw_text(f'Displaying screen data {"@ "+format(self.scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+		elif self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ "+format(self.scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
-		elif (disp_lcd != 0 and scr[3][disp_lcd-1] is not None) or disp_lcd == 0: scr_bytes = [self.read_dmem_bytes(scr[3][disp_lcd-1] + i*scr[1] if disp_lcd else 0xf800 + i*scr[0], scr[1]) for i in range(scr[2])]
+		elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: scr_bytes = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + i*self.scr[1] if disp_lcd else 0xf800 + i*self.scr[0], self.scr[1]) for i in range(self.scr[2])]
 		if config.hardware_id == 5:
-			if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(scr[3][disp_lcd-1] + scr[1]*scr[2] + i*scr[1], scr[1]) for i in range(scr[2]))
-			else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*scr[0], scr[1], 8) for i in range(scr[2]))
-			screen_data_status_bar, screen_data = self.get_scr_data_cwii(scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
-		elif (disp_lcd != 0 and scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
+			if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2]))
+			else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2]))
+			screen_data_status_bar, screen_data = self.get_scr_data_cwii(self.scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
+		elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 		
 		scr_range = self.sim.sfr[0x30] & 7
 		scr_mode = self.sim.sfr[0x31] & 7
@@ -1707,11 +1741,11 @@ class Sim:
 				for i in range(len(screen_data_status_bar)):
 					try: crop = config.status_bar_crops[i]
 					except IndexError: continue
-					if screen_data_status_bar[i]: self.screen.blit(self.status_bar, (config.screen_tl_w + crop[0], config.screen_tl_h), crop)
+					if screen_data_status_bar[i]: self.display.blit(self.status_bar, (crop[0], 0), crop)
 			else:
-				sbar = [scr_bytes[0][j] & (1 << k) for j in range(scr[1]) for k in range(7, -1, -1)]
-				for x in range(scr[4]):
-					if sbar[x]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi - self.pix_hi, config.pix, self.pix_hi))
+				sbar = [scr_bytes[0][j] & (1 << k) for j in range(self.scr[1]) for k in range(7, -1, -1)]
+				for x in range(self.scr[4]):
+					if sbar[x]: pygame.draw.rect(self.display, (0, 0, 0), (x*config.pix, self.sbar_hi - self.pix_hi, config.pix, self.pix_hi))
 	
 		if config.hardware_id == 0:
 			offset = 0
@@ -1721,33 +1755,34 @@ class Sim:
 				n = lambda j: config.pix*(5*i+offset+j) if i < 11 else config.pix*(11*5+offset) + config.pix_s*(small_offset+5*(i-11)+j)
 				pix = config.pix if i < 11 else config.pix_s
 				if i == 0:
-					if screen_data[-2]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
+					if screen_data[-2]: pygame.draw.rect(self.display, self.pix_color, (n(1), offset_h + self.sbar_hi + pix*5,  pix*2, pix))
 				elif i == 11:
-					if screen_data[-1]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
+					if screen_data[-1]: pygame.draw.rect(self.display, self.pix_color, (n(1), offset_h + self.sbar_hi + pix*5,  pix*2, pix))
 				else:
 					data = screen_data[i-(1 if i < 12 else 2)]
-					if data[0]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi,                 pix*2, pix))
-					if data[1]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(0), config.screen_tl_h + offset_h + self.sbar_hi + pix,    pix,   pix*4))
-					if data[2]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix,    pix,   pix*4))
-					if data[3]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*5,  pix*2, pix))
-					if data[4]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(0), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
-					if data[5]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(3), config.screen_tl_h + offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
-					if data[6]: pygame.draw.rect(self.screen, self.pix_color, (config.screen_tl_w + n(1), config.screen_tl_h + offset_h + self.sbar_hi + pix*10, pix*2, pix))
-					if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (config.screen_tl_w + n(4.5), config.screen_tl_h + offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
+					if data[0]: pygame.draw.rect(self.display, self.pix_color, (n(1), offset_h + self.sbar_hi,                 pix*2, pix))
+					if data[1]: pygame.draw.rect(self.display, self.pix_color, (n(0), offset_h + self.sbar_hi + pix,    pix,   pix*4))
+					if data[2]: pygame.draw.rect(self.display, self.pix_color, (n(3), offset_h + self.sbar_hi + pix,    pix,   pix*4))
+					if data[3]: pygame.draw.rect(self.display, self.pix_color, (n(1), offset_h + self.sbar_hi + pix*5,  pix*2, pix))
+					if data[4]: pygame.draw.rect(self.display, self.pix_color, (n(0), offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
+					if data[5]: pygame.draw.rect(self.display, self.pix_color, (n(3), offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
+					if data[6]: pygame.draw.rect(self.display, self.pix_color, (n(1), offset_h + self.sbar_hi + pix*10, pix*2, pix))
+					if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (n(4.5), offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
 		elif config.hardware_id == 6:
-			if scr[3][0] is not None:
-				for y in range(scr[4]):
-					for x in range(scr[2]):
-						if screen_data[x][y]: pygame.draw.rect(self.screen, (0, 0, 0), (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + (64-y)*config.pix, config.pix, config.pix))
+			if self.scr[3][0] is not None:
+				for y in range(self.scr[4]):
+					for x in range(self.scr[2]):
+						if screen_data[x][y]: pygame.draw.rect(self.display, (0, 0, 0), (x*config.pix, self.sbar_hi + (64-y)*config.pix, config.pix, config.pix))
 		else:
 			if (not disp_lcd and scr_mode == 5) or disp_lcd:
-				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else scr[2] - 1):
-					for x in range(scr[4]):
-						if screen_data[y][x]: pygame.draw.rect(self.screen, self.cwii_screen_colors[screen_data[y][x]], (config.screen_tl_w + x*config.pix, config.screen_tl_h + self.sbar_hi + y*self.pix_hi, config.pix, self.pix_hi))
+				for y in range(self.scr_ranges[scr_range] if not disp_lcd and config.hardware_id in (2, 3) else self.scr[2] - 1):
+					for x in range(self.scr[4]):
+						if screen_data[y][x]: pygame.draw.rect(self.display, self.cwii_screen_colors[screen_data[y][x]], (x*config.pix, self.sbar_hi + y*self.pix_hi, config.pix, self.pix_hi))
 
 		if self.single_step: self.step = False
 		elif self.enable_fps: self.draw_text(f'{self.clock.get_fps():.1f} FPS', 22, config.width // 2, self.text_y + 22 if self.num_buffers > 0 else self.text_y, config.pygame_color, anchor = 'midtop')
 
+		self.screen.blit(self.display, (config.screen_tl_w, config.screen_tl_h))
 		pygame.display.update()
 		self.root.update()
 		self.root.after(0, self.pygame_loop)
@@ -1801,5 +1836,5 @@ if __name__ == '__main__':
 	sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 	sim_lib.write_mem_code.restype = None
 
-	sim = Sim()
+	sim = Sim(no_klembord)
 	sim.run()
