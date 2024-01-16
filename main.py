@@ -883,7 +883,7 @@ Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + for
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
-{('Instructions per second  ' + format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else ''}\
+{('Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
 
 	@staticmethod
@@ -1000,14 +1000,15 @@ class Sim:
 				sys.exit()
 		else: flash = None
 
-		try:
-			im = PIL.Image.open(config.interface_path)
-			size = im.size
-			if not hasattr(config, 'width'):  config.width  = size[0]
-			if not hasattr(config, 'height'): config.height = size[1]
-		except (AttributeError, IOError) as e:
-			logging.error(e)
-			sys.exit()
+		if any((not hasattr(config, 'width'), not hasattr(config, 'height'))):
+			try:
+				im = PIL.Image.open(config.interface_path)
+				size = im.size
+				if not hasattr(config, 'width'):  config.width  = size[0]
+				if not hasattr(config, 'height'): config.height = size[1]
+			except (AttributeError, IOError) as e:
+				logging.error(e)
+				sys.exit()
 
 		if config.hardware_id == 2: self.ko_mode = 1 
 		elif config.hardware_id != 3: self.ko_mode = 0
@@ -1105,13 +1106,16 @@ class Sim:
 		try:
 			self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
 			self.interface_rect = self.interface.get_rect()
-		except (AttributeError, IOError): self.interface = None
+		except IOError as e:
+			logging.warning(e)
+			self.interface = None
+		except AttributeError: self.interface = None
 
 		try:
 			self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
 			self.status_bar_rect = self.status_bar.get_rect()
 		except IOError as e:
-			logging.error(e)
+			logging.warning(e)
 			self.status_bar = None
 		except AttributeError: self.status_bar = None
 		
