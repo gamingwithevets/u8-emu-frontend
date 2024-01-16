@@ -1541,7 +1541,7 @@ class Sim:
 				klembord.set({'image/png': temp.getvalue()})
 			temp.close()
 		else:
-			f = tk.filedialog.asksaveasfilename(initialfile = 'image.png', defaultextension = '.png', filetypes = [('All Files', '*.*'), ('Common Image Files', '.jpg .jpeg .png .gif .bmp .tiff .webp .svg .ico .raw .heif .heic .jfif')])
+			f = tk.filedialog.asksaveasfilename(initialfile = 'image.png', defaultextension = '.png', filetypes = [('All Files', '*.*'), ('Supported Image Files', '*.bmp *.tga *.png *.jpg *.jpeg')])
 			if f is not None: pygame.image.save(self.display, f)
 
 	def core_step_loop(self):
