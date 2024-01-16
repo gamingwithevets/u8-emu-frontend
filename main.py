@@ -300,7 +300,7 @@ class Core:
 					if value & 1 == 0: self.sfr[0xe] |= 1
 					else: self.sfr[0xe] &= ~1
 				else: self.sfr[addr] = value
-			except IndexError: logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+			except IndexError: logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc-2:04X}H')
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
@@ -308,7 +308,7 @@ class Core:
 		try: return self.sfr[addr]
 		
 		except IndexError:
-			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc:04X}H')
+			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc-2:04X}H')
 			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 
 	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
@@ -1110,7 +1110,10 @@ class Sim:
 		try:
 			self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
 			self.status_bar_rect = self.status_bar.get_rect()
-		except (AttributeError, IOError): self.status_bar = None
+		except IOError as e:
+			logging.error(e)
+			self.status_bar = None
+		except AttributeError: self.status_bar = None
 		
 		if hasattr(config, 's_height'): self.sbar_hi = config.s_height
 		else: self.sbar_hi = 0
@@ -1144,7 +1147,7 @@ class Sim:
 			3: (0x10,  0xc,  32,  [0x87d0],         96),
 			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
 			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
-			6: (0x8,   0x8,  192, [None],           64),
+			6: (0x8,   0x8,  192, [None, None],     64),
 		}
 
 		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
@@ -1471,6 +1474,7 @@ class Sim:
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		if not self.stop_mode:
 			if self.write_brkpoint != None: addr_write = self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16)
+			else: addr_write = None
 			wdp = self.sim.sfr[0xe] & 1
 
 			try: self.sim.core_step()
@@ -1483,11 +1487,14 @@ class Sim:
 				last_swi = self.sim.core.last_swi
 				if last_swi < 0x40:
 					if last_swi == 1:
-						self.screen_stuff[6][3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
+						self.scr[3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
 					elif last_swi == 2:
 						self.sim.core.regs.gp[1] = 0
 						self.sim.core.regs.gp[0] = self.keys_pressed.pop() if len(self.keys_pressed) == 1 else 0
+					elif last_swi == 4:
+						self.scr[3][1] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
+						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
 
 			if self.enable_ips:
 				if self.ips_ctr % 1000 == 0:
@@ -1632,9 +1639,8 @@ class Sim:
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
 
 		elif config.hardware_id == 6:
-			screen_data_status_bar = []
-			screen_data = [[3 if scr_bytes[i][j] & (1 << k) else 0 for j in range(7, -1, -1) for k in range(7, -1, -1)] for i in range(192)]
-
+			screen_data_status_bar = [sbar & (1 << i) for i in range(19)]
+			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(7, -1, -1) for k in range(7, -1, -1)] for i in range(192)]
 
 		else:
 			is_5800p = config.is_5800p if hasattr(config, 'is_5800p') else False
@@ -1718,6 +1724,7 @@ class Sim:
 
 	def reset_core(self):
 		self.sim.u8_reset()
+		if config.hardware_id == 6: self.scr[3][0] = self.scr[3][1] = None
 		self.stop_mode = False
 		self.prev_csr_pc = None
 		self.reg_display.print_regs()
@@ -1748,13 +1755,12 @@ class Sim:
 		self.display.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 
 		disp_lcd = self.disp_lcd.get()
-		if config.hardware_id == 6:
-			if self.scr[3][0] is None: self.draw_text('No screen data', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
-			else: self.draw_text(f'Displaying screen data {"@ "+format(self.scr[3][0], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
+		if config.hardware_id == 6: self.draw_text(f'{"No screen data" if self.scr[3][0] is None else "Screen data @ "+format(self.scr[3][0], "04X")+"H"} - {"No status bar" if self.scr[3][1] is None else "Status bar @ "+format(self.scr[3][1], "04X")+"H"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 		elif self.num_buffers > 0: self.draw_text(f'Displaying {"buffer "+str(disp_lcd if self.num_buffers > 1 else "")+" @ "+format(self.scr[3][disp_lcd-1], "04X")+"H" if disp_lcd else "LCD"}', 22, config.width // 2, self.text_y, config.pygame_color, anchor = 'midtop')
 
 		if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
 		elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: scr_bytes = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + i*self.scr[1] if disp_lcd else 0xf800 + i*self.scr[0], self.scr[1]) for i in range(self.scr[2])]
+		if config.hardware_id == 6 and self.scr[3][0] is not None: scr_bytes = [0 if self.scr[3][1] is None else int.from_bytes(self.read_dmem_bytes(self.scr[3][1], 3), 'little')] + scr_bytes
 		if config.hardware_id == 5:
 			if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2]))
 			else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2]))
@@ -1765,7 +1771,7 @@ class Sim:
 		scr_mode = self.sim.sfr[0x31] & 7
 
 		if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
-			if self.status_bar is not None and hasattr(config, 'status_bar_crops'):
+			if self.status_bar is not None and hasattr(config, 'status_bar_crops') and 'screen_data_status_bar' in locals():
 				for i in range(len(screen_data_status_bar)):
 					try: crop = config.status_bar_crops[i]
 					except IndexError: continue
