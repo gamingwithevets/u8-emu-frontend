@@ -1076,7 +1076,7 @@ class Sim:
 							else:
 								self.sim.sfr[0x14] = 2
 								if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
-					elif len(self.keys_pressed) == 0: self.keys_pressed.add(k)
+					elif len(self.keys_pressed) == 0: self.curr_key = k
 
 		def release_cb(event):
 			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
@@ -1109,7 +1109,7 @@ class Sim:
 		self.screen = pygame.display.set_mode()
 
 		try:
-			self.interface = pygame.transform.scale(pygame.image.load(config.interface_path), (config.width, config.height))
+			self.interface = pygame.transform.smoothscale(pygame.image.load(config.interface_path), (config.width, config.height))
 			self.interface_rect = self.interface.get_rect()
 		except IOError as e:
 			logging.warning(e)
@@ -1262,7 +1262,9 @@ class Sim:
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 
+		# TI MathPrint only
 		self.screen_changed = False
+		self.curr_key = 0
 
 	def get_var(self, var, typ): return typ.in_dll(sim_lib, var)
 
@@ -1508,7 +1510,8 @@ class Sim:
 						self.screen_changed = True
 					elif last_swi == 2:
 						self.sim.core.regs.gp[1] = 0
-						self.sim.core.regs.gp[0] = self.keys_pressed.pop() if len(self.keys_pressed) == 1 else 0
+						self.sim.core.regs.gp[0] = self.curr_key
+						self.curr_key = 0
 					elif last_swi == 4:
 						self.scr[3][1] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
@@ -1793,7 +1796,7 @@ class Sim:
 					for i in range(len(screen_data_status_bar)):
 						try: crop = config.status_bar_crops[i]
 						except IndexError: continue
-						if screen_data_status_bar[i]: self.display.blit(self.status_bar, (crop[0], 0), crop)
+						if screen_data_status_bar[i]: self.display.blit(self.status_bar, crop[:2], crop)
 				elif config.hardware_id != 6:
 					sbar = [scr_bytes[0][j] & (1 << k) for j in range(self.scr[1]) for k in range(7, -1, -1)]
 					for x in range(self.scr[4]):
