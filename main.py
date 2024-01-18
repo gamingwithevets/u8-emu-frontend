@@ -173,14 +173,6 @@ class Core:
 		6: (0xb000, 0x4000),
 		}
 
-		self.force = {}
-		if config.hardware_id == 6:
-			self.force = {
-			0x60: 1,
-			0x901: 0,
-			}
-		elif config.hardware_id == 2 and self.sim.is_5800p: self.force[0x46] = 4
-
 		self.sdata = data_size[config.hardware_id if config.hardware_id in data_size else 3]
 
 		self.data_mem = (ctypes.c_uint8 * self.sdata[1])()
@@ -293,26 +285,24 @@ class Core:
 
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
-		if addr not in self.force:
-			try:
-				if addr == 0xe:
-					self.sfr[0xe] = value & 0b11111110
-					if value & 1 == 0: self.sfr[0xe] |= 1
-					else: self.sfr[0xe] &= ~1
+		try:
+			if config.hardware_id == 6:
+				if addr == 0xe: self.sfr[addr] = value == 0x5a
+				elif addr == 0x900: self.sfr[addr] = 0x34
+				elif addr == 0x901: self.sfr[addr] = value == 0
 				else: self.sfr[addr] = value
-			except IndexError:
-				label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
-				logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc-2:04X}H{" ("+label+")" if label is not None else ""}')
-				self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
+			else: self.sfr[addr] = value
+		except IndexError:
+			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
+			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
+			self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
-		if addr in self.force: self.sfr[addr] = self.force[addr]
 		try: return self.sfr[addr]
-		
 		except IndexError:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
-			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.core.regs.csr:X}:{self.core.regs.pc-2:04X}H{" ("+label+")" if label is not None else ""}')
+			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
 			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 
 	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
@@ -860,7 +850,7 @@ R8   R9   R10  R11  R12  R13  R14  R15
 ''' + '   '.join(f'{regs.gp[8+i]:02X}' for i in range(8)) + f'''
 
 Control registers:
-CSR:PC          {csr:X}:{pc:04X}H{" ("+label+")" if label is not None else ""}
+CSR:PC          {self.sim.get_addr_label(csr, pc)}
 Previous CSR:PC {self.sim.prev_csr_pc} -- Prev. Prev.: {self.sim.prev_prev_csr_pc}
 Opcode          ''' + ' '.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(ins_len // 2)) + f'''
 Instruction     {ins}
@@ -872,10 +862,10 @@ DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
                    C Z S OV MIE HC ELEVEL
 PSW             {psw:02X} {self.fmt_x(psw_f[0])} {self.fmt_x(psw_f[1])} {self.fmt_x(psw_f[2])}  {self.fmt_x(psw_f[3])}  {self.fmt_x(psw_f[4])}   {self.fmt_x(psw_f[5])} {psw_f[6:]} ({int(psw_f[6:], 2)})
 
-LCSR:LR         {regs.lcsr:X}:{regs.lr:04X}H
-ECSR1:ELR1      {regs.ecsr[0]:X}:{regs.elr[0]:04X}H
-ECSR2:ELR2      {regs.ecsr[1]:X}:{regs.elr[1]:04X}H
-ECSR3:ELR3      {regs.ecsr[2]:X}:{regs.elr[2]:04X}H
+LCSR:LR         {self.sim.get_addr_label(regs.lcsr, regs.lr)}
+ECSR1:ELR1      {self.sim.get_addr_label(regs.ecsr[0], regs.elr[0])}
+ECSR2:ELR2      {self.sim.get_addr_label(regs.ecsr[1], regs.elr[1])}
+ECSR3:ELR3      {self.sim.get_addr_label(regs.ecsr[2], regs.elr[2])}
 
 EPSW1           {regs.epsw[0]:02X}
 EPSW2           {regs.epsw[1]:02X}
@@ -1590,6 +1580,10 @@ class Sim:
 		offset_str = hex(offset) if offset > 9 else str(offset)
 		return f'{label[0] if label[1] else self.labels[label[2]][0]+label[0]}{"+"+offset_str if offset != 0 else ""}'
 
+	def get_addr_label(self, csr, pc):
+		label = self.get_instruction_label((csr << 16) + pc)
+		return f'{csr:X}:{pc:04X}H{" ("+label+")" if label is not None else ""}'
+
 	def draw_text(self, text, size, x, y, color = (255, 255, 255), font_name = None, anchor = 'center'):
 		font = pygame.font.SysFont(font_name, int(size))
 		text_surface = font.render(str(text), True, color)
@@ -1745,7 +1739,20 @@ class Sim:
 
 	def reset_core(self):
 		self.sim.u8_reset()
-		if config.hardware_id == 6: self.scr[3][0] = self.scr[3][1] = None
+		if config.hardware_id == 6:
+			self.scr[3][0] = self.scr[3][1] = None
+			for i in range(0x1000): self.sim.sfr[i] = 0xff
+			self.sim.sfr[2] = 0x13
+			self.sim.sfr[3] = 3
+			self.sim.sfr[4] = 2
+			self.sim.sfr[5] = 0x40
+			self.sim.sfr[0xa] = 3
+			self.sim.sfr[0xe] = 0
+			self.sim.sfr[0xf] = 0x82
+			self.sim.sfr[0x900] = 6
+			self.sim.sfr[1] = 0x30
+			for i in range(0x10, 0x4f): self.sim.sfr[i] = 0
+
 		self.stop_mode = False
 		self.prev_csr_pc = None
 		self.reg_display.print_regs()
