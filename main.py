@@ -291,6 +291,7 @@ class Core:
 				elif addr == 0x900: self.sfr[addr] = 0x34
 				elif addr == 0x901: self.sfr[addr] = value == 0
 				else: self.sfr[addr] = value
+			elif addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: pass
 			else: self.sfr[addr] = value
 		except IndexError:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
@@ -299,7 +300,9 @@ class Core:
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
-		try: return self.sfr[addr]
+		try:
+			if addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: return 4
+			return self.sfr[addr]
 		except IndexError:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
@@ -1776,9 +1779,13 @@ class Sim:
 
 		self.screen.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 		if self.interface is not None: self.screen.blit(self.interface, self.interface_rect)
-		try:
-			for key in self.keys_pressed: self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGB_ADD)
-		except RuntimeError: pass
+		if config.hardware_id == 6 and self.curr_key != 0:
+			pygame.draw.rect(self.screen, (255, 255, 255), config.keymap[self.curr_key][0])
+			self.screen.blit(self.interface, config.keymap[self.curr_key][0][:2], config.keymap[self.curr_key][0], pygame.BLEND_RGB_SUB)
+		elif len(self.keys_pressed) > 0:
+			for key in self.keys_pressed:
+				pygame.draw.rect(self.screen, (255, 255, 255), config.keymap[key][0])
+				self.screen.blit(self.interface, config.keymap[key][0][:2], config.keymap[key][0], pygame.BLEND_RGB_SUB)
 
 		disp_lcd = self.disp_lcd.get()
 
