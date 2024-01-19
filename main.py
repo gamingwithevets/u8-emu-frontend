@@ -887,6 +887,20 @@ Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 	@functools.lru_cache
 	def fmt_x(val): return 'x' if int(val) else ' '
 
+class WDT:
+	def __init__(self, sim):
+		self.sim = sim
+		self.mode = None
+		self.ms = (125, 500, 2000, 8000)
+
+	def start_wdt(self, mode = 2):
+		self.mode = mode
+		self.wdt_loop()
+
+	def wdt_loop(self):
+		self.sim.sim.sfr[0x14] |= 1
+		self.sim.root.after(self.ms[self.mode], self.wdt_loop)
+
 class Sim:
 	def __init__(self, no_klembord):
 		self.copyclip = not no_klembord or (no_klembord and os.name == 'nt')
@@ -1035,6 +1049,7 @@ class Sim:
 		self.data_mem = DataMem(self)
 		self.gp_modify = GPModify(self)
 		self.reg_display = RegDisplay(self)
+		self.wdt = WDT(self)
 		self.disas = disas_main.Disasm()
 
 		if hasattr(config, 'labels'):
@@ -1161,27 +1176,31 @@ class Sim:
 		else: self.display = pygame.Surface((self.scr[4]*config.pix, (self.scr[2] - 1)*self.pix_hi + self.sbar_hi))
 		self.display.fill((255, 255, 255))
 
-		self.int_table = {
-		# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
-			(0x14, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
-			(0x14, 1): (0x0a, 0x10, 1,    'XI0INT'),
-		 	(0x14, 2): (0x0c, 0x10, 2,    'XI1INT'),
-			(0x14, 3): (0x0e, 0x10, 3,    'XI2INT'),
-			(0x14, 4): (0x10, 0x10, 4,    'XI3INT'),
-			(0x14, 5): (0x12, 0x10, 5,    'TM0INT'),     # Timer 0 interrupt
-			(0x14, 6): (0x14, 0x10, 6,    'L256SINT'),
-			(0x14, 7): (0x16, 0x10, 7,    'L1024SINT'),
-			(0x15, 0): (0x18, 0x11, 0,    'L4096SINT'),
-			(0x15, 1): (0x1a, 0x11, 1,    'L16384SINT'),
-			(0x15, 2): (0x1c, 0x11, 2,    'SIO0INT'),    # Synchronous serial port 0 interrupt
-			(0x15, 3): (0x1e, 0x11, 3,    'I2C0INT'),    # I²C bus 0 interrupt
-			(0x15, 4): (0x20, 0x11, 4,    'I2C1INT'),    # I²C bus 1 interrupt
-			(0x15, 5): (0x22, 0x11, 5,    'BENDINT'),
-			(0x15, 6): (0x24, 0x11, 6,    'BLOWINT'),
-			(0x15, 7): (0x26, 0x11, 7,    'RTCINT'),     # Real-time clock interrupt
-			(0x16, 0): (0x28, 0x12, 0,    'AL0INT'),     # RTC alarm 0 interrupt
-			(0x16, 1): (0x2a, 0x12, 1,    'AL1INT'),     # RTC alarm 1 interrupt
-		}
+		if config.hardware_id != 6: self.int_table = {
+			# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
+				(0x14, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
+				(0x14, 1): (0x0a, 0x10, 1,    'XI0INT'),     # External interrupt 0
+			 	(0x14, 2): (0x0c, 0x10, 2,    'XI1INT'),     # External interrupt 1
+				(0x14, 3): (0x0e, 0x10, 3,    'XI2INT'),     # External interrupt 2
+				(0x14, 4): (0x10, 0x10, 4,    'XI3INT'),     # External interrupt 3
+				(0x14, 5): (0x12, 0x10, 5,    'TM0INT'),     # Timer 0 interrupt
+				(0x14, 6): (0x14, 0x10, 6,    'L256SINT'),
+				(0x14, 7): (0x16, 0x10, 7,    'L1024SINT'),
+				(0x15, 0): (0x18, 0x11, 0,    'L4096SINT'),
+				(0x15, 1): (0x1a, 0x11, 1,    'L16384SINT'),
+				(0x15, 2): (0x1c, 0x11, 2,    'SIO0INT'),    # Synchronous serial port 0 interrupt
+				(0x15, 3): (0x1e, 0x11, 3,    'I2C0INT'),    # I²C bus 0 interrupt
+				(0x15, 4): (0x20, 0x11, 4,    'I2C1INT'),    # I²C bus 1 interrupt
+				(0x15, 5): (0x22, 0x11, 5,    'BENDINT'),
+				(0x15, 6): (0x24, 0x11, 6,    'BLOWINT'),
+				(0x15, 7): (0x26, 0x11, 7,    'RTCINT'),     # Real-time clock interrupt
+				(0x16, 0): (0x28, 0x12, 0,    'AL0INT'),     # RTC alarm 0 interrupt
+				(0x16, 1): (0x2a, 0x12, 1,    'AL1INT'),     # RTC alarm 1 interrupt
+			}
+		else: self.int_table = {
+			# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
+				(0x14, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
+			}
 
 		# first item can be anything
 		self.cwii_screen_colors = (None, (170, 170, 170), (85, 85, 85), (0, 0, 0))
@@ -1287,6 +1306,7 @@ class Sim:
 		self.pygame_loop()
 
 		if os.name != 'nt': os.system('xset r off')
+		if config.hardware_id == 6: self.wdt.start_wdt()
 		self.root.mainloop()
 
 	def bind_(self, char, func):
