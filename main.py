@@ -895,10 +895,11 @@ class WDT:
 
 	def start_wdt(self, mode = 2):
 		self.mode = mode
-		self.wdt_loop()
+		self.sim.root.after(self.ms[self.mode], self.wdt_loop)
 
 	def wdt_loop(self):
-		self.sim.sim.sfr[0x14] |= 1
+		self.sim.sim.sfr[0x18] |= 1
+		self.mode = self.sim.sim.sfr[0xf] & 3
 		self.sim.root.after(self.ms[self.mode], self.wdt_loop)
 
 class Sim:
@@ -1199,7 +1200,7 @@ class Sim:
 			}
 		else: self.int_table = {
 			# (irqsfr,bit):(vtadr,ie_sfr,bit, name)
-				(0x14, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
+				(0x18, 0): (0x08, None, None, 'WDTINT'),     # Watchdog timer interrupt
 			}
 
 		# first item can be anything
@@ -1467,7 +1468,6 @@ class Sim:
 			self.sim.sfr[0x23] = counter >> 8
 
 			if counter >= target and self.stop_mode:
-				self.stop_mode = False
 				self.sim.sfr[9] &= ~(1 << 1)
 				self.sim.sfr[0x14] = 0x20
 				if not config.real_hardware:
@@ -1478,7 +1478,7 @@ class Sim:
 	def find_bit(num): return (num & -num).bit_length() - 1
 
 	def check_ints(self):
-		for i in range(0x14, 0x16):
+		for i in range(0x14, 0x16) if config.hardware_id != 6 else range(0x18, 0x20):
 			if self.sim.sfr[i] == 0: continue
 			self.raise_int(i, self.find_bit(self.sim.sfr[i]))
 
@@ -1488,8 +1488,10 @@ class Sim:
 		else: cond = True
 
 		elevel = 2 if intdata[3] == 'WDTINT' else 1
-		if cond and self.sim.core.regs.psw & 3 >= elevel:
-			#logging.info(f'{intdata[3]} interrupt raised @ {self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H')
+		mie = elevel & (1 << 3) if elevel == 1 else 1
+		if cond and (self.sim.core.regs.psw & 3 >= elevel or elevel == 2) and mie:
+			#logging.info(f'{intdata[3]} interrupt raised {"@ "+self.get_addr_label(self.sim.core.regs.csr, self.sim.core.regs.pc) if intdata[3] != "WDTINT" else ""}')
+			self.stop_mode = False
 			self.sim.sfr[irq] &= ~(1 << bit)
 			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
 			self.sim.core.regs.ecsr[elevel-1] = self.sim.core.regs.csr
@@ -1541,10 +1543,11 @@ class Sim:
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step: self.hit_brkpoint()
 
 			if self.write_brkpoint != None and self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16) != addr_write: self.hit_brkpoint()
-		if config.hardware_id != 6: self.keyboard()
-		if self.stop_mode: self.timer()
-		else: self.sbycon()
-		if config.hardware_id != 6 and (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
+		if config.hardware_id != 6:
+			self.keyboard()
+			if self.stop_mode: self.timer()
+			else: self.sbycon()
+		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
 
 	def hit_brkpoint(self):
