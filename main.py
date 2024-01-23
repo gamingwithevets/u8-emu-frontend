@@ -880,6 +880,7 @@ Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + for
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
+Counts until next WDTINT {self.sim.wdt.counter}
 {('Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
 
@@ -891,16 +892,21 @@ class WDT:
 	def __init__(self, sim):
 		self.sim = sim
 		self.mode = None
-		self.ms = (125, 500, 2000, 8000)
+		self.ms = (4096, 16384, 65536, 262144)
+		self.counter = 0
 
 	def start_wdt(self, mode = 2):
 		self.mode = mode
-		self.sim.root.after(self.ms[self.mode], self.wdt_loop)
+		self.counter = self.ms[self.mode]
+
+	def dec_wdt(self):
+		self.counter -= 1
+		if self.counter == 0: self.wdt_loop()
 
 	def wdt_loop(self):
 		self.sim.sim.sfr[0x18] |= 1
 		self.mode = self.sim.sim.sfr[0xf] & 3
-		self.sim.root.after(self.ms[self.mode], self.wdt_loop)
+		self.counter = self.ms[self.mode]
 
 class Sim:
 	def __init__(self, no_klembord):
@@ -1088,21 +1094,23 @@ class Sim:
 					elif len(self.keys_pressed) == 0: self.curr_key = k
 
 		def release_cb(event):
-			if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
+			if config.hardware_id != 6:
+				if event.type == tk.EventType.KeyRelease and event.keysym.startswith('Shift'): 
+					self.keys_pressed.clear()
+					return
+
+				for k, v in config.keymap.items():
+					p = v[0]
+					if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
+						or (event.type == tk.EventType.KeyRelease and (event.char if self.use_char else event.keysym.lower()) in v[1:]):
+							try:
+								self.keys_pressed.remove(k)
+								return
+							except KeyError: break
+
 				self.keys_pressed.clear()
 				return
-
-			for k, v in config.keymap.items():
-				p = v[0]
-				if (event.type == tk.EventType.ButtonRelease and event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3])) \
-					or (event.type == tk.EventType.KeyRelease and (event.char if self.use_char else event.keysym.lower()) in v[1:]):
-						try:
-							self.keys_pressed.remove(k)
-							return
-						except KeyError: break
-
-			self.keys_pressed.clear()
-			return
+			else: self.curr_key = 0
 
 		if hasattr(config, 'keymap'):
 			embed_pygame.bind('<KeyPress>', press_cb)
@@ -1526,7 +1534,7 @@ class Sim:
 					elif last_swi == 2:
 						self.sim.core.regs.gp[1] = 0
 						self.sim.core.regs.gp[0] = self.curr_key
-						self.curr_key = 0
+						if self.curr_key != 0: self.hit_brkpoint()
 					elif last_swi == 4:
 						self.scr[3][1] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
@@ -1549,6 +1557,8 @@ class Sim:
 			else: self.sbycon()
 		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
+
+		self.wdt.dec_wdt()
 
 	def hit_brkpoint(self):
 		self.set_single_step(True)
