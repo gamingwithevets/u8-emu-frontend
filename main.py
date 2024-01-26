@@ -1558,7 +1558,7 @@ class Sim:
 		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
 
-		self.wdt.dec_wdt()
+		if config.hardware_id == 6: self.wdt.dec_wdt()
 
 	def hit_brkpoint(self):
 		self.set_single_step(True)
