@@ -841,6 +841,7 @@ class RegDisplay(tk.Toplevel):
 		psw = regs.psw
 		psw_f = format(psw, '08b')
 		label = self.sim.get_instruction_label((csr << 16) + pc)
+		nl = '\n'
 
 		if wm_state == 'normal': self.info_label['text'] = f'''\
 === REGISTERS ===
@@ -879,9 +880,9 @@ Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(
 Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
-Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
-Counts until next WDTINT {self.sim.wdt.counter}
-{('Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
+Last SWI value           {last_swi if last_swi < 0x40 else 'None'}\
+{nl+'Counts until next WDTINT ' + self.sim.wdt.counter if config.hardware_id == 6 else ''}\
+{(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
 
 	@staticmethod
@@ -1476,6 +1477,7 @@ class Sim:
 			self.sim.sfr[0x23] = counter >> 8
 
 			if counter >= target and self.stop_mode:
+				self.stop_mode = False
 				self.sim.sfr[9] &= ~(1 << 1)
 				self.sim.sfr[0x14] = 0x20
 				if not config.real_hardware:
