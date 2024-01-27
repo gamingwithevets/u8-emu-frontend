@@ -1534,7 +1534,7 @@ class Sim:
 					elif last_swi == 2:
 						self.sim.core.regs.gp[1] = 0
 						self.sim.core.regs.gp[0] = self.curr_key
-						if self.curr_key != 0: self.hit_brkpoint()
+						#if self.curr_key != 0: self.hit_brkpoint()
 					elif last_swi == 4:
 						self.scr[3][1] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
