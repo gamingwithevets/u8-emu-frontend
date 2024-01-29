@@ -1136,7 +1136,7 @@ class Sim:
 		self.screen = pygame.display.set_mode()
 
 		try:
-			self.interface = pygame.transform.smoothscale(pygame.image.load(config.interface_path), (config.width, config.height))
+			self.interface = pygame.transform.smoothscale(pygame.image.load(config.interface_path).convert(), (config.width, config.height))
 			self.interface_rect = self.interface.get_rect()
 		except IOError as e:
 			logging.warning(e)
@@ -1144,7 +1144,7 @@ class Sim:
 		except AttributeError: self.interface = None
 
 		try:
-			self.status_bar = pygame.transform.scale(pygame.image.load(config.status_bar_path), (config.s_width, config.s_height))
+			self.status_bar = pygame.transform.smoothscale(pygame.image.load(config.status_bar_path).convert(), (config.s_width, config.s_height))
 			self.status_bar_rect = self.status_bar.get_rect()
 		except IOError as e:
 			logging.warning(e)
@@ -1521,12 +1521,6 @@ class Sim:
 			self.sim.core.regs.pc = (self.sim.code_mem[intdata[0]+1] << 8) + self.sim.code_mem[intdata[0]]
 
 			self.int_timer = 2
-
-	@staticmethod
-	def read_word(arr, index): return arr[index + 1] << 8 | arr[index]
-
-	@staticmethod
-	def write_word(arr, index, val): arr[index + 1] = val >> 8; arr[index] = val & 0xff
 
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
