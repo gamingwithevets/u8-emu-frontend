@@ -716,10 +716,11 @@ class DataMem(tk.Toplevel):
 		if config.hardware_id == 2 and self.sim.is_5800p: segments.append('Flash RAM (04:0000H - 04:7FFFH)')
 
 		self.segment_var = tk.StringVar(value = segments[0])
-		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments)
+		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments, state = 'readonly')
 		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
 		self.segment_cb.pack()
 
+		ttk.Label(self, text = 'Address  ' + ' '.join([f'{i:02X}' for i in range(16)]) + '   ASCII text', justify = 'left', font = config.data_mem_font).pack(fill = 'x')
 		self.code_frame = ttk.Frame(self)
 		self.code_text_sb = ttk.Scrollbar(self.code_frame)
 		self.code_text_sb.pack(side = 'right', fill = 'y')
