@@ -118,10 +118,12 @@ class u8_mem_t(ctypes.Structure):
 	]
 
 u8_core_t._fields_ = [
-		("regs",	u8_regs_t),
-		("cur_dsr",	ctypes.c_uint8),
-		("mem",		u8_mem_t),
-		('last_swi',ctypes.c_uint8),
+		("regs",			u8_regs_t),
+		("cur_dsr",			ctypes.c_uint8),
+		("mem",				u8_mem_t),
+		('last_swi',		ctypes.c_uint8),
+		('last_write',		ctypes.c_uint32),
+		('last_write_size', ctypes.c_uint8),
 	]
 
 class u8_mem_type_e(IntEnum):	
@@ -1516,8 +1518,6 @@ class Sim:
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		if not self.stop_mode:
-			if self.write_brkpoint != None: addr_write = self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16)
-			else: addr_write = None
 			wdp = self.sim.sfr[0xe] & 1
 
 			try: self.sim.core_step()
@@ -1551,8 +1551,8 @@ class Sim:
 				self.ips_ctr += 1
 
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step: self.hit_brkpoint()
-
-			if self.write_brkpoint != None and self.read_dmem(self.write_brkpoint & 0xffff, 1, self.write_brkpoint >> 16) != addr_write: self.hit_brkpoint()
+			if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
+			
 		if config.hardware_id != 6:
 			self.keyboard()
 			if self.stop_mode: self.timer()
