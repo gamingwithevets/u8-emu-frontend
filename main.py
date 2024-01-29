@@ -30,6 +30,11 @@ from pyu8disas.labeltool import labeltool
 from tool8 import tool8
 import platform
 
+try:
+	from bcd import BCD
+	bcd = True
+except ImportError: bcd = False
+
 if sys.version_info < (3, 6, 0, 'alpha', 4):
 	print(f'This program requires at least Python 3.6.0a4. (You are running Python {platform.python_version()})')
 	sys.exit()
@@ -295,6 +300,7 @@ class Core:
 				else: self.sfr[addr] = value
 			elif addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: pass
 			else: self.sfr[addr] = value
+			if bcd: self.sim.bcd.bcd_peripheral(addr)
 		except IndexError:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
@@ -912,7 +918,7 @@ class WDT:
 		self.counter = self.ms[self.mode]
 
 class Sim:
-	def __init__(self, no_klembord):
+	def __init__(self, no_klembord, bcd):
 		self.copyclip = not no_klembord or (no_klembord and os.name == 'nt')
 
 		try:
@@ -1060,6 +1066,7 @@ class Sim:
 		self.gp_modify = GPModify(self)
 		self.reg_display = RegDisplay(self)
 		self.wdt = WDT(self)
+		if bcd: self.bcd = BCD(self)
 		self.disas = disas_main.Disasm()
 
 		if hasattr(config, 'labels'):
@@ -1515,6 +1522,12 @@ class Sim:
 
 			self.int_timer = 2
 
+	@staticmethod
+	def read_word(arr, index): return arr[index + 1] << 8 | arr[index]
+
+	@staticmethod
+	def write_word(arr, index, val): arr[index + 1] = val >> 8; arr[index] = val & 0xff
+
 	def core_step(self):
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		if not self.stop_mode:
@@ -1942,5 +1955,5 @@ if __name__ == '__main__':
 	sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 	sim_lib.write_mem_code.restype = None
 
-	sim = Sim(no_klembord)
+	sim = Sim(no_klembord, bcd)
 	sim.run()
