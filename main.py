@@ -292,6 +292,13 @@ class Core:
 
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
+
+		if addr >= 0x1000:
+			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
+			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
+			self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1, value)
+			return
+
 		try:
 			if config.hardware_id == 6:
 				if addr == 0xe: self.sfr[addr] = value == 0x5a
@@ -300,21 +307,20 @@ class Core:
 				else: self.sfr[addr] = value
 			elif addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: pass
 			else: self.sfr[addr] = value
-			if bcd: self.sim.bcd.bcd_peripheral(addr)
-		except IndexError:
-			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
-			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
-			self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
+		except Exception as e: logging.error(f'{type(e).__name__} writing to {0xf000+addr:04X}H: {e}')
+		
+		if bcd and config.hardware_id == 5: self.sim.bcd.bcd_peripheral(addr)
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
-		try:
-			if addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: return 4
-			return self.sfr[addr]
-		except IndexError:
+		if addr >= 0x1000:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
 			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
+		try:
+			if addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: return 4
+			return self.sfr[addr]
+		except Exception as e: logging.error(f'{type(e).__name__} reading from {0xf000+addr:04X}H: {e}')
 
 	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
 	def write_dsr(self, core, seg, addr, value):
