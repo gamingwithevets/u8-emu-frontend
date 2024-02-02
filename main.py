@@ -71,64 +71,69 @@ class Keybind(ctypes.Structure):
 		('keysym', ctypes.c_uint8),
 	]
 
-# Thanks Delta / @frsr on Discord!
+# from Delta / @frsr (edited to be compatible with pitust™ quality code)
 class u8_core_t(ctypes.Structure):	# Forward definition so pointers can be used
 	pass
 
 class u8_regs_t(ctypes.Structure):
 	_fields_ = [
-		("gp",		ctypes.c_uint8 * 16),
-		("pc",		ctypes.c_uint16),
-		("csr",		ctypes.c_uint8),
-		("lcsr",	ctypes.c_uint8),
-		("ecsr",	ctypes.c_uint8 * 3),
-		("lr",		ctypes.c_uint16),
-		("elr",		ctypes.c_uint16 * 3),
-		("psw",		ctypes.c_uint8),
-		("epsw",	ctypes.c_uint8 * 3),
-		("sp",		ctypes.c_uint16),
-		("ea",		ctypes.c_uint16),
-		("dsr",		ctypes.c_uint8)
+		('gp',		ctypes.c_uint8 * 16),
+		('pc',		ctypes.c_uint16),
+		('csr',		ctypes.c_uint8),
+		('lcsr',	ctypes.c_uint8),
+		('ecsr',	ctypes.c_uint8 * 3),
+		('lr',		ctypes.c_uint16),
+		('elr',		ctypes.c_uint16 * 3),
+		('psw',		ctypes.c_uint8),
+		('epsw',	ctypes.c_uint8 * 3),
+		('sp',		ctypes.c_uint16),
+		('ea',		ctypes.c_uint16),
+		('dsr',		ctypes.c_uint8)
+	]
+
+class _acc_arr(ctypes.Structure):
+	_fields_ = [
+		('array',	ctypes.POINTER(ctypes.c_uint8)),
+		('dirty',	ctypes.c_uint64),
 	]
 
 class _acc_func(ctypes.Structure):
 	_fields_ = [
-		("read",	ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)),
-		("write",	ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8))
+		('read',	ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)),
+		('write',	ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8))
 	]
 
 class _acc_union(ctypes.Union):
-	_anonymous_ = ["_acc_func"]
+	_anonymous_ = ['_acc_arr', '_acc_func']
 	_fields_ = [
-		("array",		ctypes.POINTER(ctypes.c_uint8)),
-		("_acc_func",	_acc_func)
+		('_acc_arr',	_acc_arr),
+		('_acc_func',	_acc_func)
 	]
 
 class u8_mem_reg_t(ctypes.Structure):
-	_anonymous_ = ["_acc_union"]
+	_anonymous_ = ['_acc_union']
 	_fields_ = [
-		("type",		ctypes.c_uint),
-		("rw",			ctypes.c_bool),
-		("addr_l",		ctypes.c_uint32),
-		("addr_h",		ctypes.c_uint32),
+		('type',		ctypes.c_uint),
+		('rw',			ctypes.c_bool),
+		('addr_l',		ctypes.c_uint32),
+		('addr_h',		ctypes.c_uint32),
 
-		("acc",			ctypes.c_uint),
-		("_acc_union",	_acc_union)
+		('acc',			ctypes.c_uint),
+		('_acc_union',	_acc_union)
 	]
 
 class u8_mem_t(ctypes.Structure):
 	_fields_ = [
-		("num_regions",	ctypes.c_int),
-		("regions",		ctypes.POINTER(u8_mem_reg_t))
+		('num_regions',	ctypes.c_int),
+		('regions',		ctypes.POINTER(u8_mem_reg_t))
 	]
 
 u8_core_t._fields_ = [
-		("regs",			u8_regs_t),
-		("cur_dsr",			ctypes.c_uint8),
-		("mem",				u8_mem_t),
+		('regs',			u8_regs_t),
+		('cur_dsr',			ctypes.c_uint8),
 		('last_swi',		ctypes.c_uint8),
-		('last_write',		ctypes.c_uint32),
-		('last_write_size', ctypes.c_uint8),
+		('mem',				u8_mem_t),
+		('codemem',			u8_mem_t),
 	]
 
 class u8_mem_type_e(IntEnum):	
@@ -198,49 +203,57 @@ class Core:
 		read_dsr_f = read_functype(self.read_dsr)
 		write_dsr_f = write_functype(self.write_dsr)
 
+		code_regions = [
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,  len(rom) - 1, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
+		]
+		if config.hardware_id == 6: code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))))
+		else:
+			if config.hardware_id == 2 and self.sim.is_5800p: code_regions.extend((
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))),
+				))
+			elif config.real_hardware and config.hardware_id != 2: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))))
+
 		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,       len(rom) - 1,                    u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata) - 1,             u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.data_mem, 0x00000))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0F000,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_dsr_f, write_dsr_f))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F001, 0x0FFFF,  u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(read_sfr_f, write_sfr_f))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata) - 1,             u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.data_mem, 0x00000)))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0F000,                               u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_dsr_f, write_dsr_f))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F001, 0x0FFFF,                               u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_sfr_f, write_sfr_f))),
 		]
 
-		if config.real_hardware and config.hardware_id != 2: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
 
 		if config.hardware_id == 4: regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg,   0x00000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
 			))
 		elif config.hardware_id == 5:
 			regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.rw_seg,   0x00000))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg,   0x00000)))),
 			))
 
 		elif config.hardware_id == 6:
 			regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
 			))
 
 		else:
-			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x10000))))
-			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(uint8_ptr(self.code_mem, 0x00000))))
-			if config.hardware_id == 2 and self.sim.is_5800p:
-				regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(uint8_ptr(self.flash_mem, 0x20000))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_BOTH, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(uint8_ptr(self.flash_mem, 0x00000))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))),
+			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))))
+			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
+			if config.hardware_id == 2 and self.sim.is_5800p: regions.extend((
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x20000)))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
 				))
-			elif config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(None, _acc_func(blank_code_mem_f))))
 
 		self.core.mem.num_regions = len(regions)
 		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
+
+		self.core.codemem.num_regions = len(code_regions)
+		self.core.codemem.regions = ctypes.cast((u8_mem_reg_t * len(code_regions))(*code_regions), ctypes.POINTER(u8_mem_reg_t))
 
 		# Initialise SP and PC
 		self.core.regs.sp = rom[0] | rom[1] << 8
@@ -285,9 +298,6 @@ class Core:
 	def write_mem_data(self, dsr, offset, size, value):
 		return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
 	
-	def write_mem_code(self, dsr, offset, size, value):
-		return sim_lib.write_mem_code(ctypes.pointer(self.core), dsr, offset, size, value)
-
 	def blank_code_mem(self, core, seg, addr): return 0xff
 
 	def write_sfr(self, core, seg, addr, value):
@@ -1565,7 +1575,7 @@ class Sim:
 				self.ips_ctr += 1
 
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step: self.hit_brkpoint()
-			if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
+			#if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
 			self.keyboard()
@@ -1953,8 +1963,6 @@ if __name__ == '__main__':
 
 	sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 	sim_lib.write_mem_data.restype = None
-	sim_lib.write_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
-	sim_lib.write_mem_code.restype = None
 
 	sim = Sim(no_klembord, bcd)
 	sim.run()
