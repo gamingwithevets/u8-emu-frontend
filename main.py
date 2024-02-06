@@ -902,7 +902,7 @@ EPSW3           {regs.epsw[2]:02X}
 
 Other information:
 Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
-Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
+Write breakpoint [N/A]   {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}\
@@ -1187,7 +1187,7 @@ class Sim:
 		self.rc_menu.add_command(label = 'Jump to...', accelerator = 'J', command = self.jump.deiconify)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Set breakpoint to...', accelerator = 'B', command = self.brkpoint.deiconify)
-		self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify)
+		#self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify)
 		self.rc_menu.add_command(label = 'Clear breakpoints', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
@@ -1208,7 +1208,8 @@ class Sim:
 		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
 		else: self.scr = self.screen_stuff[3]
 		
-		if config.hardware_id == 6: self.display = pygame.Surface((self.scr[2]*config.pix, (self.scr[4])*self.pix_hi + self.sbar_hi))
+		if config.hardware_id == 6: self.display = pygame.Surface((self.scr[2]*config.pix if self.status_bar is None else self.status_bar.get_width(), (self.scr[4])*self.pix_hi + self.sbar_hi))
+		elif config.hardware_id == 0: self.display = pygame.Surface((self.scr[4]*config.pix if self.status_bar is None else self.status_bar.get_width(), 13*self.pix_hi + self.sbar_hi))
 		else: self.display = pygame.Surface((self.scr[4]*config.pix, (self.scr[2] - 1)*self.pix_hi + self.sbar_hi))
 		self.display.fill((255, 255, 255))
 
@@ -1523,7 +1524,7 @@ class Sim:
 		if intdata[1] is not None and intdata[2] is not None: cond = self.sim.sfr[intdata[1]] & (1 << intdata[2])
 		else: cond = True
 
-		elevel = 2 if intdata[3] == 'WDTINT' else 1
+		elevel = 2 if intdata[0] == 8 else 1
 		mie = elevel & (1 << 3) if elevel == 1 else 1
 		if cond and (self.sim.core.regs.psw & 3 >= elevel or elevel == 2) and mie:
 			#logging.info(f'{intdata[3]} interrupt raised {"@ "+self.get_addr_label(self.sim.core.regs.csr, self.sim.core.regs.pc) if intdata[3] != "WDTINT" else ""}')
@@ -1895,7 +1896,7 @@ class Sim:
 						if data[4]: pygame.draw.rect(self.display, self.pix_color, (n(0), offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
 						if data[5]: pygame.draw.rect(self.display, self.pix_color, (n(3), offset_h + self.sbar_hi + pix*6,  pix,   pix*4))
 						if data[6]: pygame.draw.rect(self.display, self.pix_color, (n(1), offset_h + self.sbar_hi + pix*10, pix*2, pix))
-						if data[7] and i < 11: pygame.draw.circle(self.screen, self.pix_color, (n(4.5), offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
+						if data[7] and i < 11: pygame.draw.circle(self.display, self.pix_color, (n(4.5), offset_h + self.sbar_hi + config.pix*11), config.pix * (3/4))
 			elif config.hardware_id == 6:
 				if self.scr[3][0] is not None:
 					for y in range(self.scr[4]):
