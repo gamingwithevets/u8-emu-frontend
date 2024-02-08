@@ -212,7 +212,7 @@ class Core:
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))),
 				))
-			elif config.real_hardware and config.hardware_id != 2: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))))
+			elif config.real_hardware and config.hardware_id != 2: code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))))
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
