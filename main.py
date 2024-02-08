@@ -902,7 +902,7 @@ EPSW3           {regs.epsw[2]:02X}
 
 Other information:
 Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
-Write breakpoint [N/A]   {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
+Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}\
@@ -1187,7 +1187,7 @@ class Sim:
 		self.rc_menu.add_command(label = 'Jump to...', accelerator = 'J', command = self.jump.deiconify)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Set breakpoint to...', accelerator = 'B', command = self.brkpoint.deiconify)
-		#self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify)
+		self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify, state = 'disabled')
 		self.rc_menu.add_command(label = 'Clear breakpoints', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
