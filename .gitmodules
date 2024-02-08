@@ -6,4 +6,4 @@
 	url = https://github.com/pitust/tool8.git
 [submodule "u8_emu"]
 	path = u8_emu
-	url = https://github.com/gamingwithevets/u8_emu
+	url = https://github.com/gamingwithevets/u8_emu.git
