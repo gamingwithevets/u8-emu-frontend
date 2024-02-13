@@ -557,11 +557,11 @@ class Jump(tk.Toplevel):
 		ttk.Label(self, text = 'Input new values for CSR and PC.\nStop mode will be disabled after jumping.\n(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 1, range(0x10))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 4, range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_csr_pc).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.set_csr_pc())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -594,11 +594,11 @@ class Brkpoint(tk.Toplevel):
 		ttk.Label(self, text = 'Single-step mode will be activated if CSR:PC matches\nthe below. Note that only 1 breakpoint can be set.\n(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 1, range(0x10))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 4, range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.set_brkpoint())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -633,11 +633,11 @@ class WriteBrkpoint(tk.Toplevel):
 		ttk.Label(self, text = 'Single-step mode will be activated there is a write\nto the specified address. 1 write breakpoint at a time.\n(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'Segment').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 2, range(0x100))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'Address').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 4, range(0x10000))); self.pc_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.set_brkpoint())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -671,14 +671,14 @@ class Write(tk.Toplevel):
 		ttk.Label(self, text = '(please input hex bytes)', justify = 'center').pack()
 		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
 		ttk.Label(self.csr, text = 'Segment').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.csr_entry.pack(side = 'right')
+		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 2, range(0x100))); self.csr_entry.pack(side = 'right')
 		self.csr_entry.insert(0, '0')
 		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
 		ttk.Label(self.pc, text = 'Address').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
+		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', 4, range(0x10000))); self.pc_entry.pack(side = 'right')
 		self.byte = tk.Frame(self); self.byte.pack(fill = 'x')
 		ttk.Label(self.byte, text = 'Hex data').pack(side = 'left')
-		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', None, 1)); self.byte_entry.pack(side = 'right')
+		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', None, None, 1)); self.byte_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.write).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.write())
 		self.bind('<Escape>', lambda x: self.withdraw())
@@ -1361,9 +1361,10 @@ class Sim:
 		self.root.bind(char.upper(), func)
 
 	@staticmethod
-	def validate_hex(new_char, new_str, act_code, rang = None, spaces = False):
+	def validate_hex(new_char, new_str, act_code, length, rang = None, spaces = False):
 		act_code = int(act_code)
 		if rang: rang = eval(rang)
+		length = int(length)
 		
 		if act_code == 1:
 			try: new_value_int = int(new_char, 16)
@@ -1374,7 +1375,8 @@ class Sim:
 				else:
 					try: new_value_int = int(new_char.replace(' ', ''), 16)
 					except ValueError: return False
-			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
+			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and  not in rang: return False
+			if length is not None and int(new_str, 16) == 0 and len(new_str) > length: return False
 
 		return True
 
