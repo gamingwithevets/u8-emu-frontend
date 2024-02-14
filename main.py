@@ -1361,10 +1361,9 @@ class Sim:
 		self.root.bind(char.upper(), func)
 
 	@staticmethod
-	def validate_hex(new_char, new_str, act_code, length, rang = None, spaces = False):
+	def validate_hex(new_char, new_str, act_code, rang = None, spaces = False):
 		act_code = int(act_code)
 		if rang: rang = eval(rang)
-		length = int(length)
 		
 		if act_code == 1:
 			try: new_value_int = int(new_char, 16)
@@ -1375,8 +1374,9 @@ class Sim:
 				else:
 					try: new_value_int = int(new_char.replace(' ', ''), 16)
 					except ValueError: return False
-			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and  not in rang: return False
-			if length is not None and int(new_str, 16) == 0 and len(new_str) > length: return False
+			if rang:
+				if len(new_str) > len(hex(rang[-1])[2:]): return False
+				elif len(new_str) == len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
 
