@@ -674,7 +674,7 @@ class Write(tk.Toplevel):
 		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
 		self.byte = tk.Frame(self); self.byte.pack(fill = 'x')
 		ttk.Label(self.byte, text = 'Hex data').pack(side = 'left')
-		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', None, None, 1)); self.byte_entry.pack(side = 'right')
+		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', None, 1)); self.byte_entry.pack(side = 'right')
 		ttk.Button(self, text = 'OK', command = self.write).pack(side = 'bottom')
 		self.bind('<Return>', lambda x: self.write())
 		self.bind('<Escape>', lambda x: self.withdraw())
