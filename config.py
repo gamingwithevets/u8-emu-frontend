@@ -25,6 +25,9 @@ labels = []
 # 6 = TI MathPrint (ML620418A)
 hardware_id = 3
 
+# Enable this for "sample" CW ROMs. (optional)
+sample = False
+
 # Toggle fx-5800P mode. Optional; default = False. Hardware type 2 only.
 is_5800p = False
 

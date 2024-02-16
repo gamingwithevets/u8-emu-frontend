@@ -952,6 +952,7 @@ class Sim:
 		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 		self.pix_hi = config.pix_hi if hasattr(config, 'pix_hi') else config.pix
 		self.is_5800p = config.is_5800p if hasattr(config, 'is_5800p') else False
+		self.sample = config.sample if hasattr(config, 'sample') else False
 
 		if self.rom8:
 			tags = list(tool8.read8(config.rom_file))
@@ -1339,12 +1340,22 @@ class Sim:
 
 	def read_emu_kb(self, idx):
 		if config.hardware_id == 0: return self.sim.data_mem[0x800 + idx]
-		elif config.hardware_id in (4, 5): return self.sim.rw_seg[0x8e00 + idx]
+		elif config.hardware_id in (4, 5):
+			if config.hardware_id == 5 and self.sample:
+				if idx == 0: return self.sim.rw_seg[0x8e07]
+				elif idx == 1: return self.sim.rw_seg[0x8e05]
+				elif idx == 2: return self.sim.rw_seg[0x8e08]
+			else: return self.sim.rw_seg[0x8e00 + idx]
 		else: return self.sim.data_mem[0xe00 + idx]
 
 	def write_emu_kb(self, idx, val):
 		if config.hardware_id == 0: self.sim.data_mem[0x800 + idx] = val & 0xff
-		elif config.hardware_id in (4, 5): self.sim.rw_seg[0x8e00 + idx] = val & 0xff
+		elif config.hardware_id in (4, 5):
+			if config.hardware_id == 5 and self.sample:
+				if idx == 0: self.sim.rw_seg[0x8e07] = val & 0xff
+				elif idx == 1: self.sim.rw_seg[0x8e05] = val & 0xff
+				elif idx == 2: self.sim.rw_seg[0x8e08] = val & 0xff
+			else: self.sim.rw_seg[0x8e00 + idx] = val & 0xff
 		else: self.sim.data_mem[0xe00 + idx] = val & 0xff
 
 	def run(self):
