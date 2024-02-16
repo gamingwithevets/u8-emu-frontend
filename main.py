@@ -1385,7 +1385,9 @@ class Sim:
 				else:
 					try: new_value_int = int(new_char.replace(' ', ''), 16)
 					except ValueError: return False
-			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
+			if rang:
+				if len(new_str) > len(hex(rang[-1])[2:]): return False
+				elif len(new_str) == len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
 
