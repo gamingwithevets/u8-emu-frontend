@@ -909,6 +909,8 @@ class RegDisplay(tk.Toplevel):
 		self.title('Register display')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 		self.bind('\\', lambda x: self.sim.set_step())
+		self.sim.bind_(self, 's', lambda x: self.sim.set_single_step(True))
+		self.sim.bind_(self, 'p', lambda x: self.sim.set_single_step(False))
 		self['bg'] = config.console_bg
 
 		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
@@ -1352,13 +1354,13 @@ class Sim:
 
 		self.root.bind('<Button-3>', self.open_popup)
 		self.root.bind('\\', lambda x: self.set_step())
-		self.bind_('s', lambda x: self.set_single_step(True))
-		self.bind_('p', lambda x: self.set_single_step(False))
-		self.bind_('j', lambda x: self.jump.deiconify())
-		self.bind_('b', lambda x: self.brkpoint.deiconify())
-		self.bind_('m', lambda x: self.data_mem.open())
-		self.bind_('r', lambda x: self.reg_display.open())
-		if config.hardware_id != 6: self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
+		self.bind_(self.root, 's', lambda x: self.set_single_step(True))
+		self.bind_(self.root, 'p', lambda x: self.set_single_step(False))
+		self.bind_(self.root, 'j', lambda x: self.jump.deiconify())
+		self.bind_(self.root, 'b', lambda x: self.brkpoint.deiconify())
+		self.bind_(self.root, 'm', lambda x: self.data_mem.open())
+		self.bind_(self.root, 'r', lambda x: self.reg_display.open())
+		if config.hardware_id not in (0, 6): self.bind_(self.root, 'd', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
 
 		self.single_step = True
 		self.ok = True
@@ -1427,9 +1429,10 @@ class Sim:
 		if config.hardware_id == 6: self.wdt.start_wdt()
 		self.root.mainloop()
 
+	@staticmethod
 	def bind_(self, char, func):
-		self.root.bind(char.lower(), func)
-		self.root.bind(char.upper(), func)
+		self.bind(char.lower(), func)
+		self.bind(char.upper(), func)
 
 	@staticmethod
 	def validate_hex(new_char, new_str, act_code, rang = None, spaces = False):
@@ -1632,7 +1635,6 @@ class Sim:
 			try: self.sim.core_step()
 			except Exception as e: logging.error(e)
 
-
 			if self.prev_csr_pc is not None: self.prev_prev_csr_pc = self.prev_csr_pc
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
@@ -1671,8 +1673,8 @@ class Sim:
 				self.ips_ctr += 1
 
 			if self.find_brkpoint((self.sim.core.regs.csr << 16) + self.sim.core.regs.pc, 0): self.hit_brkpoint()
-			if any([self.find_brkpoint(i, 1) for i in range(self.sim.core.last_read, self.sim.core.last_read + self.sim.core.last_read_size)]): self.hit_brkpoint()
-			if any([self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)]): self.hit_brkpoint()
+			if self.sim.core.last_read_size != 0 and any([self.find_brkpoint(i, 1) for i in range(self.sim.core.last_read, self.sim.core.last_read + self.sim.core.last_read_size)]): self.hit_brkpoint()
+			if self.sim.core.last_write_size != 0 and any([self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)]): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
 			self.keyboard()
