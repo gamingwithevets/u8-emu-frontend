@@ -132,6 +132,10 @@ u8_core_t._fields_ = [
 		('regs',			u8_regs_t),
 		('cur_dsr',			ctypes.c_uint8),
 		('last_swi',		ctypes.c_uint8),
+		('last_read',		ctypes.c_uint32),
+		('last_read_size',	ctypes.c_uint8),
+		('last_write',		ctypes.c_uint32),
+		('last_write_size',	ctypes.c_uint8),
 		('u16_mode',		ctypes.c_bool),
 		('mem',				u8_mem_t),
 		('codemem',			u8_mem_t),
@@ -904,7 +908,7 @@ Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(
 Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
-Last SWI value           {last_swi if last_swi < 0x40 else 'None'}\
+Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 {nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if config.hardware_id == 6 else ''}\
 {(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
@@ -1069,6 +1073,7 @@ class Sim:
 
 		self.init_sp = rom[0] | rom[1] << 8
 		self.init_pc = rom[2] | rom[3] << 8
+		self.init_brk = rom[4] | rom[5] << 8
 
 		self.keys_pressed = set()
 		self.keys = []
@@ -1187,7 +1192,7 @@ class Sim:
 		self.rc_menu.add_command(label = 'Jump to...', accelerator = 'J', command = self.jump.deiconify)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Set breakpoint to...', accelerator = 'B', command = self.brkpoint.deiconify)
-		self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify, state = 'disabled')
+		self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify)
 		self.rc_menu.add_command(label = 'Clear breakpoints', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
@@ -1410,7 +1415,7 @@ class Sim:
 		else: return self.read_dmem(addr, num_bytes, segment).to_bytes(num_bytes, 'little')
 
 
-	def read_cmem(self, addr, segment = 0): return self.sim.read_mem_code(segment, addr, 2)
+	def read_cmem(self, addr, segment = 0): return (self.sim.code_mem[(segment << 16) + addr + 1] << 8) + self.sim.code_mem[(segment << 16) + addr]
 
 	def calc_checksum(self):
 		csum = 0
@@ -1578,7 +1583,7 @@ class Sim:
 				tk.messagebox.showwarning('Warning', 'Jumped to unallocated code memory!')
 				self.hit_brkpoint()
 
-			if csrpc == (self.sim.code_mem[5] << 8) + self.sim.code_mem[4] and not self.single_step:
+			if csrpc == self.init_brk and not self.single_step:
 				tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
 				self.hit_brkpoint()
 
@@ -1608,7 +1613,7 @@ class Sim:
 				self.ips_ctr += 1
 
 			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint: self.hit_brkpoint()
-			#if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
+			if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
 			self.keyboard()
@@ -1882,7 +1887,7 @@ class Sim:
 
 		disp_lcd = self.disp_lcd.get()
 
-		if (config.hardware_id == 6 and (self.screen_changed or self.always_update)) or config.hardware_id != 6:
+		if not self.single_step and ((config.hardware_id == 6 and (self.screen_changed or self.always_update)) or config.hardware_id != 6):
 			self.screen_changed = False
 			self.display.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 
