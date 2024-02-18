@@ -6,7 +6,7 @@
 
 bool stop_accept[2];
 
-void core_step(struct u8_core *core, bool real_hw, int hwid, bool is_5800p) {
+void core_step(struct u8_core *core, bool real_hw, int hwid) {
 	write_mem_data(core, 0, 0xf000, 1, core->regs.dsr);
 	
 	uint8_t wdp = read_mem_data(core, 0, 0xf00e, 1) & 1;
@@ -14,10 +14,7 @@ void core_step(struct u8_core *core, bool real_hw, int hwid, bool is_5800p) {
 	u8_step(core);
 	
 	core->regs.csr %= (real_hw && hwid == 3) ? 2 : 0x10;
-	core->regs.pc &= 0xfffe;
-	if (hwid == 6)
-		core->regs.sp &= 0xfffe;
-	else {
+	if (hwid != 6) {
 		uint8_t stpacp = read_mem_data(core, 0, 0xf008, 1);
 		if (stop_accept[0]) {
 			if (!stop_accept[1]) {

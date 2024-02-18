@@ -132,6 +132,7 @@ u8_core_t._fields_ = [
 		('regs',			u8_regs_t),
 		('cur_dsr',			ctypes.c_uint8),
 		('last_swi',		ctypes.c_uint8),
+		('u16_mode',		ctypes.c_bool),
 		('mem',				u8_mem_t),
 		('codemem',			u8_mem_t),
 	]
@@ -163,9 +164,11 @@ class Core:
 		ko_mode = self.sim.ko_mode
 
 		self.core = u8_core_t()
+		if config.hardware_id == 6: self.core.u16_mode = True
 
 		# Initialise memory
-		self.code_mem = (ctypes.c_uint8 * len(rom))(*rom)
+		self.rom_length = len(rom)
+		self.code_mem = (ctypes.c_uint8 * 0x100000)(*rom)
 		if config.hardware_id == 2 and self.sim.is_5800p: self.flash_mem = (ctypes.c_uint8 * len(flash))(*flash)
 
 		rwin_sizes = {
@@ -196,23 +199,21 @@ class Core:
 		read_functype = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
 		write_functype = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
 
-		blank_code_mem_f = read_functype(self.blank_code_mem)
 		battery_f = read_functype(self.battery)
 		read_sfr_f = read_functype(self.read_sfr)
 		write_sfr_f = write_functype(self.write_sfr)
 		read_dsr_f = read_functype(self.read_dsr)
 		write_dsr_f = write_functype(self.write_dsr)
 
-		code_regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000,  len(rom) - 1, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-		]
-		if config.hardware_id == 6: code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))))
+		code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
+		if config.hardware_id == 6:
+			for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
 		else:
-			if config.hardware_id == 2 and self.sim.is_5800p: code_regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0x7FFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))),
-				))
-			elif config.real_hardware and config.hardware_id != 2: code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, len(rom), 0xFFFFF, u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))))
+			if config.hardware_id == 2 and self.sim.is_5800p:
+				code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))))
+				for i in range(len(rom), 0x80000): self.code_mem[i] = 0xff
+			elif config.real_hardware and config.hardware_id != 2:
+				for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
 
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
@@ -298,8 +299,6 @@ class Core:
 	def write_mem_data(self, dsr, offset, size, value):
 		return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
 	
-	def blank_code_mem(self, core, seg, addr): return 0xff
-
 	def write_sfr(self, core, seg, addr, value):
 		addr += 1
 
@@ -906,7 +905,7 @@ Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + for
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}\
-{nl+'Counts until next WDTINT ' + self.sim.wdt.counter if config.hardware_id == 6 else ''}\
+{nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if config.hardware_id == 6 else ''}\
 {(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
 
@@ -1087,7 +1086,7 @@ class Sim:
 		if bcd: self.bcd = BCD(self)
 		self.disas = disas_main.Disasm()
 
-		if hasattr(config, 'labels'):
+		if hasattr(config, 'labels') and config.labels:
 			self.labels = {self.init_pc: ['start', True]}
 			if rom[4] | rom[5] << 8 != self.init_pc: self.labels[rom[4] | rom[5] << 8] = ['brk', True]
 			for file in config.labels:
@@ -1385,9 +1384,7 @@ class Sim:
 				else:
 					try: new_value_int = int(new_char.replace(' ', ''), 16)
 					except ValueError: return False
-			if rang:
-				if len(new_str) > len(hex(rang[-1])[2:]): return False
-				elif len(new_str) == len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
+			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
 
@@ -1568,11 +1565,22 @@ class Sim:
 		if not self.stop_mode:
 			wdp = self.sim.sfr[0xe] & 1
 
+			prev_csrpc_int = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
 			try: self.sim.core_step()
 			except Exception as e: logging.error(e)
 
+
 			if self.prev_csr_pc is not None: self.prev_prev_csr_pc = self.prev_csr_pc
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
+
+			csrpc = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
+			if csrpc >= self.sim.rom_length and prev_csrpc_int < self.sim.rom_length and not self.single_step:
+				tk.messagebox.showwarning('Warning', 'Jumped to unallocated code memory!')
+				self.hit_brkpoint()
+
+			if csrpc == (self.sim.code_mem[5] << 8) + self.sim.code_mem[4] and not self.single_step:
+				tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
+				self.hit_brkpoint()
 
 			if config.hardware_id == 6:
 				last_swi = self.sim.core.last_swi
@@ -1585,6 +1593,7 @@ class Sim:
 						self.sim.core.regs.gp[1] = 0
 						self.sim.core.regs.gp[0] = self.curr_key
 						#if self.curr_key != 0: self.hit_brkpoint()
+						self.curr_key = 0
 					elif last_swi == 4:
 						self.scr[3][1] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
 						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
@@ -1598,7 +1607,7 @@ class Sim:
 					self.ips_start = cur
 				self.ips_ctr += 1
 
-			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint and not self.single_step: self.hit_brkpoint()
+			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint: self.hit_brkpoint()
 			#if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
@@ -1611,9 +1620,10 @@ class Sim:
 		if config.hardware_id == 6: self.wdt.dec_wdt()
 
 	def hit_brkpoint(self):
-		self.set_single_step(True)
-		self.reg_display.open()
-		self.keys_pressed.clear()
+		if not self.single_step:
+			self.set_single_step(True)
+			self.reg_display.open()
+			self.keys_pressed.clear()
 
 	def save_flash(self):
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
