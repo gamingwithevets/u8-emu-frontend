@@ -546,6 +546,105 @@ class Debounce():
 
 class DebounceTk(Debounce, tk.Tk): pass
 
+# https://stackoverflow.com/a/16198198
+class VerticalScrolledFrame(tk.Frame):
+	def __init__(self, parent, *args, **kw):
+		tk.Frame.__init__(self, parent, *args, **kw)
+
+		vscrollbar = tk.Scrollbar(self, orient = 'vertical')
+		vscrollbar.pack(fill = 'y', side = 'right')
+		canvas = tk.Canvas(self, bd = 0, highlightthickness = 0, yscrollcommand = vscrollbar.set)
+		canvas.pack(side = 'left', fill = 'both', expand = True)
+		vscrollbar.config(command = canvas.yview)
+
+		canvas.xview_moveto(0)
+		canvas.yview_moveto(0)
+
+		self.interior = interior = tk.Frame(canvas)
+		interior_id = canvas.create_window(0, 0, window = interior, anchor = 'nw')
+
+		def _configure_interior(event):
+			size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
+			canvas.config(scrollregion = '0 0 %s %s' % size)
+			if interior.winfo_reqwidth() != canvas.winfo_width():
+				canvas.config(width=interior.winfo_reqwidth())
+		interior.bind('<Configure>', _configure_interior)
+
+		def _configure_canvas(event):
+			if interior.winfo_reqwidth() != canvas.winfo_width():
+				canvas.itemconfigure(interior_id, width=canvas.winfo_width())
+		canvas.bind('<Configure>', _configure_canvas)
+
+class BrkpointFrame(tk.Frame):
+	sizenames = {2: "", 4: "D", 8: "Q"}
+
+	def __init__(self, master, gui, index, **kw):
+		tk.Frame.__init__(self, master, **kw)
+		self.gui = gui
+		self.index = index
+
+		self.type = tk.IntVar()
+
+		ttk.Button(self, text = 'X', width = 2, command = self.destroy).pack(side = 'right')
+		ttk.Label(self, text = '   ').pack(side = 'right')
+		ttk.Radiobutton(self, text = 'Execute', variable = self.type, value = 0, command = self.change_type).pack(side = 'right')
+		ttk.Radiobutton(self, text = 'Write', variable = self.type, value = 2, command = self.change_type).pack(side = 'right')
+		ttk.Radiobutton(self, text = 'Read', variable = self.type, value = 1, command = self.change_type).pack(side = 'right')
+
+		self.enabled = tk.BooleanVar(value = True)
+		ttk.Checkbutton(self, text = ' ', variable = self.enabled, command = self.set_enable).pack(side = 'left')
+
+		self.vcmd = self.register(self.gui.sim.validate_hex)
+
+		self.csr = ttk.Entry(self, width = 3, justify = 'left', validate = 'key', validatecommand = (self.vcmd, '%S', '%P', '%d', range(0x10)))
+		self.csr.bind('<KeyPress>', self.cap_input)
+		self.csr.pack(side = 'left')
+
+		ttk.Label(self, text = ':').pack(side = 'left')
+
+		self.pc = ttk.Entry(self, width = 6, justify = 'left', validate = 'key', validatecommand = (self.vcmd, '%S', '%P', '%d', range(0, 0x10000, 2)))
+		self.pc.bind('<KeyPress>', self.cap_input)
+		self.pc.pack(side = 'left')
+
+		ttk.Label(self, text = 'H').pack(side = 'left')
+
+		self.bind('<FocusOut>', self.focusout)
+
+	def change_type(self):
+		if self.type.get() == 0:
+			value = int(self.pc.get(), 16) & 0xfffe
+			self.pc.delete(0, 'end')
+			self.pc.insert(0, f'{value:04X}')
+			self.pc['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0, 0x10000, 2))
+
+			value = int(self.csr.get(), 16) & 0xf
+			self.csr.delete(0, 'end')
+			self.csr.insert(0, f'{value:X}')
+			self.csr['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x10))
+		else:
+			self.csr['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x100))
+			self.pc['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x10000))
+
+	def cap_input(self, event):
+		if event.char.lower() in '0123456789abcdef':
+			event.widget.insert('end', event.char.upper())
+			return 'break'
+
+	def focusout(self, event = None):
+		self.pc.insert(0, '0'*(4-len(self.pc.get())))
+		self.csr.insert(0, '0'*(1+(self.type.get() != 0)-len(self.csr.get())))
+
+		self.change_type()
+
+		self.gui.sim.brkpoints[self.index]['addr'] = (int(self.csr.get(), 16) << 16) + int(self.pc.get(), 16)
+
+	def set_enable(self): self.gui.sim.brkpoints[self.index]['enabled'] = self.enabled.get()
+
+	def destroy(self):
+		del self.gui.sim.brkpoints[self.index]
+		if len(self.gui.sim.brkpoints) == 0: self.gui.clearbutton['state'] = 'disabled'
+		super().destroy()
+
 class Jump(tk.Toplevel):
 	def __init__(self, sim):
 		super(Jump, self).__init__()
@@ -589,72 +688,34 @@ class Brkpoint(tk.Toplevel):
 		self.sim = sim
 
 		self.withdraw()
-		self.geometry('300x125')
+		self.geometry('800x600')
 		self.resizable(False, False)
-		self.title('Set breakpoint')
+		self.title('Breakpoint manager')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = 'Single-step mode will be activated if CSR:PC matches\nthe below. Note that only 1 breakpoint can be set.\n(please input hex bytes)', justify = 'center').pack()
-		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
-		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
-		self.csr_entry.insert(0, '0')
-		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
-		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
-		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: self.set_brkpoint())
-		self.bind('<Escape>', lambda x: self.withdraw())
+		ttk.Label(self, text = 'Breakpoint list\n').pack()
 
-	def set_brkpoint(self):
-		csr_entry = self.csr_entry.get()
-		pc_entry = self.pc_entry.get()
-		if csr_entry == '' or pc_entry == '': return
-		self.sim.breakpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
-		self.sim.reg_display.print_regs()
-		self.withdraw()
+		buttonframe = tk.Frame(self)
+		addbtn = ttk.Button(buttonframe, text = 'Add breakpoint', command = self.add)
+		addbtn.pack(side = 'left')
 
-		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
-		self.pc_entry.delete(0, 'end')
+		self.clearbutton = ttk.Button(buttonframe, text = 'Delete all', command = self.clear_all, state = 'disabled'); self.clearbutton.pack(side = 'left')
+		buttonframe.pack()
 
-	def clear_brkpoint(self):
-		self.sim.breakpoint = None
-		self.sim.write_brkpoint = None
-		self.sim.reg_display.print_regs()
+		self.brkpointframe = VerticalScrolledFrame(self)
+		self.brkpointframe.pack(fill = 'both', expand = True)
 
-class WriteBrkpoint(tk.Toplevel):
-	def __init__(self, sim):
-		super(WriteBrkpoint, self).__init__()
-		self.sim = sim
+	def add(self):
+		idx = max(self.sim.brkpoints) + 1 if len(self.sim.brkpoints) > 0 else 0
+		if len(self.sim.brkpoints) == 0: self.clearbutton['state'] = 'normal'
 
-		self.withdraw()
-		self.geometry('300x125')
-		self.resizable(False, False)
-		self.title('Set breakpoint')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = 'Single-step mode will be activated there is a write\nto the specified address. 1 write breakpoint at a time.\n(please input hex bytes)', justify = 'center').pack()
-		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
-		ttk.Label(self.csr, text = 'Segment').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.csr_entry.pack(side = 'right')
-		self.csr_entry.insert(0, '0')
-		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
-		ttk.Label(self.pc, text = 'Address').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
-		ttk.Button(self, text = 'OK', command = self.set_brkpoint).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: self.set_brkpoint())
-		self.bind('<Escape>', lambda x: self.withdraw())
+		widget = BrkpointFrame(self.brkpointframe.interior, self, idx)
+		self.sim.brkpoints[idx] = {'enabled': True, 'type': 0, 'addr': None, 'widget': widget}
+		widget.pack(fill = 'x')
 
-	def set_brkpoint(self):
-		csr_entry = self.csr_entry.get()
-		pc_entry = self.pc_entry.get()
-		if csr_entry == '' or pc_entry == '': return
-		self.sim.write_brkpoint = ((int(csr_entry, 16) if csr_entry else 0) << 16) + (int(pc_entry, 16) if pc_entry else 0)
-		self.sim.reg_display.print_regs()
-		self.withdraw()
-
-		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
-		self.pc_entry.delete(0, 'end')
+	def clear_all(self, confirm = True):
+		if confirm and not tk.messagebox.askyesno('Warning', 'Are you sure you want to delete all breakpoints?', icon = 'warning'): return
+		for j in [i['widget'] for i in self.sim.brkpoints.values()]: j.destroy()
 
 class Write(tk.Toplevel):
 	def __init__(self, sim):
@@ -904,8 +965,6 @@ EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
 Other information:
-Breakpoint               {format(self.sim.breakpoint >> 16, 'X') + ':' + format(self.sim.breakpoint % 0x10000, '04X') + 'H' if self.sim.breakpoint is not None else 'None'}
-Write breakpoint         {format(self.sim.write_brkpoint >> 16, 'X') + ':' + format(self.sim.write_brkpoint % 0x10000, '04X') + 'H' if self.sim.write_brkpoint is not None else 'None'}
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
@@ -1082,7 +1141,6 @@ class Sim:
 
 		self.jump = Jump(self)
 		self.brkpoint = Brkpoint(self)
-		self.write_brkpoint = WriteBrkpoint(self)
 		self.write = Write(self)
 		self.data_mem = DataMem(self)
 		self.gp_modify = GPModify(self)
@@ -1191,9 +1249,7 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Jump to...', accelerator = 'J', command = self.jump.deiconify)
 		self.rc_menu.add_separator()
-		self.rc_menu.add_command(label = 'Set breakpoint to...', accelerator = 'B', command = self.brkpoint.deiconify)
-		self.rc_menu.add_command(label = 'Set write breakpoint to...', command = self.write_brkpoint.deiconify)
-		self.rc_menu.add_command(label = 'Clear breakpoints', accelerator = 'N', command = self.brkpoint.clear_brkpoint)
+		self.rc_menu.add_command(label = 'Manage breakpoints', accelerator = 'B', command = self.brkpoint.deiconify)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
 		self.rc_menu.add_separator()
@@ -1298,7 +1354,6 @@ class Sim:
 		self.bind_('p', lambda x: self.set_single_step(False))
 		self.bind_('j', lambda x: self.jump.deiconify())
 		self.bind_('b', lambda x: self.brkpoint.deiconify())
-		self.bind_('n', lambda x: self.brkpoint.clear_brkpoint())
 		self.bind_('m', lambda x: self.data_mem.open())
 		self.bind_('r', lambda x: self.reg_display.open())
 		if config.hardware_id != 6: self.bind_('d', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
@@ -1306,8 +1361,7 @@ class Sim:
 		self.single_step = True
 		self.ok = True
 		self.step = False
-		self.breakpoint = None
-		self.write_brkpoint = None
+		self.brkpoints = {}
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
@@ -1389,7 +1443,9 @@ class Sim:
 				else:
 					try: new_value_int = int(new_char.replace(' ', ''), 16)
 					except ValueError: return False
-			if rang and len(new_char) == 1 and len(new_str) >= len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
+			if rang:
+				if len(new_str) > len(hex(rang[-1])[2:]): return False
+				elif len(new_str) == len(hex(rang[-1])[2:]) and int(new_str, 16) not in rang: return False
 
 		return True
 
@@ -1612,8 +1668,9 @@ class Sim:
 					self.ips_start = cur
 				self.ips_ctr += 1
 
-			if (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc == self.breakpoint: self.hit_brkpoint()
-			if self.write_brkpoint in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size): self.hit_brkpoint()
+			if self.find_brkpoint((self.sim.core.regs.csr << 16) + self.sim.core.regs.pc, 0): self.hit_brkpoint()
+			if any([self.find_brkpoint(i, 1) for i in range(self.sim.core.last_read, self.sim.core.last_read + self.sim.core.last_read_size)]): self.hit_brkpoint()
+			if any([self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)]): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
 			self.keyboard()
@@ -1623,6 +1680,10 @@ class Sim:
 		if self.int_timer != 0: self.int_timer -= 1
 
 		if config.hardware_id == 6: self.wdt.dec_wdt()
+
+	def find_brkpoint(self, addr, typ):
+		if len(self.brkpoints) > 0: print(self.brkpoints)
+		return any([v['enabled'] and v['addr'] == addr and v['type'] == typ for v in self.brkpoints.values()])
 
 	def hit_brkpoint(self):
 		if not self.single_step:
