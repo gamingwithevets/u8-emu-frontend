@@ -611,6 +611,8 @@ class BrkpointFrame(tk.Frame):
 		self.bind('<FocusOut>', self.focusout)
 
 	def change_type(self):
+		self.gui.sim.brkpoints[self.index]['type'] = self.type.get()
+
 		if self.type.get() == 0:
 			value = int(self.pc.get(), 16) & 0xfffe
 			self.pc.delete(0, 'end')
@@ -1681,9 +1683,7 @@ class Sim:
 
 		if config.hardware_id == 6: self.wdt.dec_wdt()
 
-	def find_brkpoint(self, addr, typ):
-		if len(self.brkpoints) > 0: print(self.brkpoints)
-		return any([v['enabled'] and v['addr'] == addr and v['type'] == typ for v in self.brkpoints.values()])
+	def find_brkpoint(self, addr, typ): return any([v['enabled'] and v['addr'] == addr and v['type'] == typ for v in self.brkpoints.values()])
 
 	def hit_brkpoint(self):
 		if not self.single_step:
