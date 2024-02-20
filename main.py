@@ -325,7 +325,7 @@ class Core:
 			else: self.sfr[addr] = value
 		except Exception as e: logging.error(f'{type(e).__name__} writing to {0xf000+addr:04X}H: {e}')
 		
-		if bcd and config.hardware_id == 5: self.sim.bcd.bcd_peripheral(addr)
+		if bcd and config.hardware_id == 5: self.sim.bcd.tick(addr)
 
 	def read_sfr(self, core, seg, addr):
 		addr += 1
@@ -1154,7 +1154,7 @@ class Sim:
 		self.reg_display = RegDisplay(self)
 		self.wdt = WDT(self)
 		if bcd: self.bcd = BCD(self)
-		elif config.hardware_id == 5: logging.info('=== TIP === To use a BCD coprocessor, create a new file bcd.py containing a "BCD" class with a "bcd_peripheral" function')
+		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py containing a "BCD" class with at least a "tick" function.')
 		self.disas = disas_main.Disasm()
 
 		if hasattr(config, 'labels') and config.labels:
