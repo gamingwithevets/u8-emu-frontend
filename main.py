@@ -172,8 +172,11 @@ class Core:
 
 		# Initialise memory
 		self.rom_length = len(rom)
-		self.code_mem = (ctypes.c_uint8 * 0x100000)(*rom)
-		if config.hardware_id == 2 and self.sim.is_5800p: self.flash_mem = (ctypes.c_uint8 * len(flash))(*flash)
+		self.code_mem = (ctypes.c_uint8 * (0x80000 if config.hardware_id == 2 and self.sim.is_5800p else 0x100000))(*rom)
+		if config.hardware_id == 2 and self.sim.is_5800p:
+			self.flash_length = len(flash)
+			self.flash_mem = (ctypes.c_uint8 * 0x80000)(*flash)
+		else: self.flash_length = 0
 
 		rwin_sizes = {
 		0: 0xdfff,
@@ -209,7 +212,7 @@ class Core:
 		read_dsr_f = read_functype(self.read_dsr)
 		write_dsr_f = write_functype(self.write_dsr)
 
-		code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
+		code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0x7FFFF if config.hardware_id == 2 and self.sim.is_5800p else 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
 		if config.hardware_id == 6:
 			for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
 		else:
@@ -249,7 +252,7 @@ class Core:
 			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))))
 			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
 			if config.hardware_id == 2 and self.sim.is_5800p: regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(blank_code_mem_f))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(battery_f))),
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x20000)))),
 					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
 				))
@@ -1151,6 +1154,7 @@ class Sim:
 		self.reg_display = RegDisplay(self)
 		self.wdt = WDT(self)
 		if bcd: self.bcd = BCD(self)
+		elif config.hardware_id == 5: logging.info('=== TIP === To use a BCD coprocessor, create a new file bcd.py containing a "BCD" class with a "bcd_peripheral" function')
 		self.disas = disas_main.Disasm()
 
 		if hasattr(config, 'labels') and config.labels:
@@ -1366,6 +1370,7 @@ class Sim:
 		self.ok = True
 		self.step = False
 		self.brkpoints = {}
+		self.stack = {}
 		self.clock = pygame.time.Clock()
 
 		self.prev_csr_pc = None
@@ -1476,7 +1481,12 @@ class Sim:
 		else: return self.read_dmem(addr, num_bytes, segment).to_bytes(num_bytes, 'little')
 
 
-	def read_cmem(self, addr, segment = 0): return (self.sim.code_mem[(segment << 16) + addr + 1] << 8) + self.sim.code_mem[(segment << 16) + addr]
+	def read_cmem(self, addr, segment = 0):
+		if config.hardware_id == 2 and self.is_5800p and segment > 7:
+			mem = self.sim.flash_mem
+			segment -= 8
+		else: mem = self.sim.code_mem
+		return (mem[(segment << 16) + addr + 1] << 8) + mem[(segment << 16) + addr]
 
 	def calc_checksum(self):
 		csum = 0
@@ -1639,7 +1649,8 @@ class Sim:
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
 			csrpc = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
-			if csrpc >= self.sim.rom_length and prev_csrpc_int < self.sim.rom_length and not self.single_step:
+			a = lambda x: self.sim.rom_length < x and x not in range(0x80000, 0x80000+self.sim.flash_length)
+			if a(csrpc) and a(prev_csrpc_int) and not self.single_step:
 				tk.messagebox.showwarning('Warning', 'Jumped to unallocated code memory!')
 				self.hit_brkpoint()
 
