@@ -266,6 +266,8 @@ class Core:
 
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 	
+	def read_reg_er(self, n): return (self.core.regs.gp[n+1] << 8) + self.core.regs.gp[n]
+
 	# Memory Access
 	def read_mem_data(self, dsr, offset, size): return sim_lib.read_mem_data(ctypes.pointer(self.core), dsr, offset, size)
 	
@@ -879,6 +881,10 @@ class RegDisplay(tk.Toplevel):
 		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
 		self.info_label.pack(side = 'left', fill = 'both')
 
+	@staticmethod
+	@functools.lru_cache
+	def fmt_x(val): return 'x' if int(val) else ' '
+
 	def open(self):
 		self.deiconify()
 		self.print_regs()
@@ -936,15 +942,44 @@ STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 {nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if config.hardware_id == 6 else ''}\
-{(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}
-
-=== CALL TRACE ===
-Coming soon!
+{(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
 
-	@staticmethod
-	@functools.lru_cache
-	def fmt_x(val): return 'x' if int(val) else ' '
+class CallStackDisplay(tk.Toplevel):
+	def __init__(self, sim):
+		super(CallStackDisplay, self).__init__()
+		self.sim = sim
+		
+		self.withdraw()
+		self.geometry('400x800')
+		self.title('Call stack display')
+		self.protocol('WM_DELETE_WINDOW', self.withdraw)
+		self['bg'] = config.console_bg
+
+		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
+		self.info_label.pack(side = 'left', fill = 'both')
+
+	def open(self):
+		self.deiconify()
+		self.print_regs()
+
+	def print_regs(self):
+		try: wm_state = self.wm_state()
+		except Exception: return
+
+		regs = self.sim.sim.core.regs
+
+		nl = '\n'
+
+		a = []
+		for j in range(len(self.sim.call_trace)):
+			i = self.sim.call_trace[j]
+			a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
+
+		if wm_state == 'normal': self.info_label['text'] = f'''\
+=== CALL STACK ===
+{''.join(a)}
+'''
 
 class WDT:
 	def __init__(self, sim):
@@ -1115,6 +1150,7 @@ class Sim:
 		self.data_mem = DataMem(self)
 		self.gp_modify = GPModify(self)
 		self.reg_display = RegDisplay(self)
+		self.call_display = CallStackDisplay(self)
 		self.wdt = WDT(self)
 		if bcd: self.bcd = BCD(self)
 		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py containing a "BCD" class with at least a "tick" function.')
@@ -1225,6 +1261,7 @@ class Sim:
 		self.rc_menu.add_command(label = 'Show data memory', accelerator = 'M', command = self.data_mem.open)
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Register display', accelerator = 'R', command = self.reg_display.open)
+		self.rc_menu.add_command(label = 'Call stack display', command = self.call_display.open)
 		self.rc_menu.add_separator()
 
 		self.screen_stuff = {
@@ -1666,10 +1703,9 @@ class Sim:
 				if self.sim.core.last_write_size != 0 and self.sim.core.last_write <= self.find_brkpoint(i, 2) < self.sim.core.last_write + self.sim.core.last_write_size: self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
-			if self.stop_mode:
-				self.timer()
-				self.keyboard()
+			if self.stop_mode: self.timer()
 			else: self.sbycon()
+			self.keyboard()
 		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
 
@@ -1729,6 +1765,7 @@ class Sim:
 	def get_instruction_label(self, addr):
 		near = self.nearest_num(self.labels.keys(), addr)
 		if near is None: return
+		elif near >> 16 != addr >> 16: return
 		label = self.labels[near]
 		offset = addr - near
 		offset_str = hex(offset) if offset > 9 else str(offset)
