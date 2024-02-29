@@ -1663,7 +1663,7 @@ class Sim:
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
 			csrpc = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
-			a = lambda x: self.sim.rom_length < x and 0x80000 <= x < 0x80000+self.sim.flash_length
+			a = lambda x: x < self.sim.rom_length or 0x80000 <= x < 0x80000+self.sim.flash_length
 			if a(csrpc) and a(prev_csrpc_int) and not self.single_step:
 				tk.messagebox.showwarning('Warning', 'Jumped to unallocated code memory!')
 				self.hit_brkpoint()
