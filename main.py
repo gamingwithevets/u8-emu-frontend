@@ -976,7 +976,10 @@ STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 {nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if config.hardware_id == 6 else ''}\
-{(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
+{(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}
+
+=== CALL TRACE ===
+Coming soon!
 '''
 
 	@staticmethod
@@ -1389,6 +1392,8 @@ class Sim:
 
 		self.scr_ranges = (31, 15, 19, 23, 27, 27, 9, 9)
 
+		self.call_trace = []
+
 		# TI MathPrint only
 		self.screen_changed = False
 		self.curr_key = 0
@@ -1642,6 +1647,16 @@ class Sim:
 			wdp = self.sim.sfr[0xe] & 1
 
 			prev_csrpc_int = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
+
+			ins_word = self.read_cmem(self.sim.core.regs.pc, self.sim.core.regs.csr)
+			# BL Cadr
+			if ins_word & 0xf0ff == 0xf001: self.call_trace.insert(0, [self.read_cmem(self.sim.core.regs.pc+2, self.sim.core.regs.csr), (self.sim.core.regs.csr << 16) + (self.sim.core.regs.pc + 4) & 0xfffe])
+			# BL ERn
+			elif ins_word & 0xff0f == 0xf003: self.call_trace.insert(0, [self.sim.read_reg_er(ins_word >> 4 & 0xf), (self.sim.core.regs.csr << 16) + (self.sim.core.regs.pc + 2) & 0xfffe])
+			# RT/POP PC
+			elif ins_word == 0xfe1f or ins_word & 0xf2ff == 0xf28e:
+				if len(self.call_trace) > 0: del self.call_trace[0]
+
 			try: self.sim.core_step()
 			except Exception as e: logging.error(e)
 
@@ -1662,8 +1677,8 @@ class Sim:
 				last_swi = self.sim.core.last_swi
 				if last_swi < 0x40:
 					if last_swi == 1:
-						self.scr[3][0] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
-						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
+						self.scr[3][0] = self.sim.read_reg_er(0)
+						self.sim.write_reg_er(0, 0)
 						self.screen_changed = True
 					elif last_swi == 2:
 						self.sim.core.regs.gp[1] = 0
@@ -1671,8 +1686,8 @@ class Sim:
 						#if self.curr_key != 0: self.hit_brkpoint()
 						self.curr_key = 0
 					elif last_swi == 4:
-						self.scr[3][1] = (self.sim.core.regs.gp[1] << 8) + self.sim.core.regs.gp[0]
-						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
+						self.scr[3][1] = self.sim.read_reg_er(0)
+						self.sim.write_reg_er(0, 0)
 						self.screen_changed = True
 
 			if self.enable_ips:
