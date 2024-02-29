@@ -209,8 +209,6 @@ class Core:
 		battery_f = read_functype(self.battery)
 		read_sfr_f = read_functype(self.read_sfr)
 		write_sfr_f = write_functype(self.write_sfr)
-		read_dsr_f = read_functype(self.read_dsr)
-		write_dsr_f = write_functype(self.write_dsr)
 
 		code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0x7FFFF if config.hardware_id == 2 and self.sim.is_5800p else 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
 		if config.hardware_id == 6:
@@ -225,8 +223,7 @@ class Core:
 		regions = [
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
 			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata) - 1,             u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.data_mem, 0x00000)))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0F000,                               u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_dsr_f, write_dsr_f))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F001, 0x0FFFF,                               u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_sfr_f, write_sfr_f))),
+			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,                               u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_sfr_f, write_sfr_f))),
 		]
 
 
@@ -266,53 +263,22 @@ class Core:
 		# Initialise SP and PC
 		self.core.regs.sp = rom[0] | rom[1] << 8
 		self.core.regs.pc = rom[2] | rom[3] << 8
-	
-	def core_step(self): sim_lib.core_step(ctypes.pointer(self.core), config.real_hardware, config.hardware_id, self.sim.is_5800p)
 
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 	
-	# Register Access
-	def read_reg_r(self, reg):
-		return sim_lib.read_reg_r(ctypes.pointer(self.core), reg)
-
-	def read_reg_er(self, reg):
-		return sim_lib.read_reg_er(ctypes.pointer(self.core), reg)
-
-	def read_reg_xr(self, reg):
-		return sim_lib.read_reg_xr(ctypes.pointer(self.core), reg)
-
-	def read_reg_qr(self, reg):
-		return sim_lib.read_reg_qr(ctypes.pointer(self.core), reg)
-	
-	def write_reg_r(self, reg, val):
-		sim_lib.write_reg_r(ctypes.pointer(self.core), reg, val)
-	
-	def write_reg_er(self, reg, val):
-		sim_lib.write_reg_er(ctypes.pointer(self.core), reg, val)
-
-	def write_reg_xr(self, reg, val):
-		sim_lib.write_reg_xr(ctypes.pointer(self.core), reg, val)
-
-	def write_reg_qr(self, reg, val):
-		sim_lib.write_reg_qr(ctypes.pointer(self.core), reg, val)
-	
 	# Memory Access
-	def read_mem_data(self, dsr, offset, size):
-		return sim_lib.read_mem_data(ctypes.pointer(self.core), dsr, offset, size)
+	def read_mem_data(self, dsr, offset, size): return sim_lib.read_mem_data(ctypes.pointer(self.core), dsr, offset, size)
 	
-	def read_mem_code(self, dsr, offset, size):
-		return sim_lib.read_mem_code(ctypes.pointer(self.core), dsr, offset, size)
-	
-	def write_mem_data(self, dsr, offset, size, value):
-		return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
+	def write_mem_data(self, dsr, offset, size, value): return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
 	
 	def write_sfr(self, core, seg, addr, value):
-		addr += 1
-
 		if addr >= 0x1000:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
 			self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1, value)
+			return
+		elif addr == 0:
+			self.core.regs.dsr = self.sfr[0] = value
 			return
 
 		try:
@@ -328,7 +294,6 @@ class Core:
 		if bcd and config.hardware_id == 5: self.sim.bcd.tick(addr)
 
 	def read_sfr(self, core, seg, addr):
-		addr += 1
 		if addr >= 0x1000:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
@@ -337,11 +302,6 @@ class Core:
 			if addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: return 4
 			return self.sfr[addr]
 		except Exception as e: logging.error(f'{type(e).__name__} reading from {0xf000+addr:04X}H: {e}')
-
-	def read_dsr(self, core, seg, addr): return self.core.regs.dsr
-	def write_dsr(self, core, seg, addr, value):
-		self.sfr[0] = value
-		self.core.regs.dsr = value
 
 	def battery(self, core, seg, addr): return 0xff
 
@@ -1616,9 +1576,11 @@ class Sim:
 	def find_bit(num): return (num & -num).bit_length() - 1
 
 	def check_ints(self):
-		for i in range(0x14, 0x16) if config.hardware_id != 6 else range(0x18, 0x20):
-			if self.sim.sfr[i] == 0: continue
-			self.raise_int(i, self.find_bit(self.sim.sfr[i]))
+		rang = (0x14, 0x16) if config.hardware_id != 6 else (0x18, 0x20)
+		if any(v != 0 for v in self.sim.sfr[rang[0]:rang[1]]):
+			for i in range(*rang):
+				if self.sim.sfr[i] == 0: continue
+				self.raise_int(i, self.find_bit(self.sim.sfr[i]))
 
 	def raise_int(self, irq, bit):
 		intdata = self.int_table[(irq, bit)]
@@ -1657,14 +1619,14 @@ class Sim:
 			elif ins_word == 0xfe1f or ins_word & 0xf2ff == 0xf28e:
 				if len(self.call_trace) > 0: del self.call_trace[0]
 
-			try: self.sim.core_step()
+			try: sim_lib.core_step(ctypes.pointer(self.sim.core), config.real_hardware, config.hardware_id)
 			except Exception as e: logging.error(e)
 
 			if self.prev_csr_pc is not None: self.prev_prev_csr_pc = self.prev_csr_pc
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
 
 			csrpc = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
-			a = lambda x: self.sim.rom_length < x and x not in range(0x80000, 0x80000+self.sim.flash_length)
+			a = lambda x: self.sim.rom_length < x and 0x80000 <= x < 0x80000+self.sim.flash_length
 			if a(csrpc) and a(prev_csrpc_int) and not self.single_step:
 				tk.messagebox.showwarning('Warning', 'Jumped to unallocated code memory!')
 				self.hit_brkpoint()
@@ -1698,13 +1660,15 @@ class Sim:
 					self.ips_start = cur
 				self.ips_ctr += 1
 
-			if self.find_brkpoint((self.sim.core.regs.csr << 16) + self.sim.core.regs.pc, 0): self.hit_brkpoint()
-			if self.sim.core.last_read_size != 0 and any([self.find_brkpoint(i, 1) for i in range(self.sim.core.last_read, self.sim.core.last_read + self.sim.core.last_read_size)]): self.hit_brkpoint()
-			if self.sim.core.last_write_size != 0 and any([self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)]): self.hit_brkpoint()
+			if len(self.brkpoints) > 0:
+				if self.find_brkpoint((self.sim.core.regs.csr << 16) + self.sim.core.regs.pc, 0): self.hit_brkpoint()
+				if self.sim.core.last_read_size != 0 and self.sim.core.last_read <= self.find_brkpoint(i, 1) < self.sim.core.last_read + self.sim.core.last_read_size: self.hit_brkpoint()
+				if self.sim.core.last_write_size != 0 and self.sim.core.last_write <= self.find_brkpoint(i, 2) < self.sim.core.last_write + self.sim.core.last_write_size: self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
-			self.keyboard()
-			if self.stop_mode: self.timer()
+			if self.stop_mode:
+				self.timer()
+				self.keyboard()
 			else: self.sbycon()
 		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
@@ -2064,31 +2028,10 @@ if __name__ == '__main__':
 
 	sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
 
-	sim_lib.core_step.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_bool, ctypes.c_int, ctypes.c_bool]
-
-	sim_lib.read_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-	sim_lib.read_reg_r.restype = ctypes.c_uint8
-	sim_lib.read_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-	sim_lib.read_reg_er.restype = ctypes.c_uint16
-	sim_lib.read_reg_xr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-	sim_lib.read_reg_xr.restype = ctypes.c_uint32
-	sim_lib.read_reg_qr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
-	sim_lib.read_reg_qr.restype = ctypes.c_uint64
-
-	sim_lib.write_reg_r.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-	sim_lib.write_reg_r.restype = None
-	sim_lib.write_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-	sim_lib.write_reg_er.restype = None
-	sim_lib.write_reg_xr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-	sim_lib.write_reg_xr.restype = None
-	sim_lib.write_reg_qr.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint64]
-	sim_lib.write_reg_qr.restype = None
+	sim_lib.core_step.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_bool, ctypes.c_int]
 
 	sim_lib.read_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
 	sim_lib.read_mem_data.restype = ctypes.c_uint64
-	sim_lib.read_mem_code.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
-	sim_lib.read_mem_code.restype = ctypes.c_uint64
-
 	sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 	sim_lib.write_mem_data.restype = None
 
