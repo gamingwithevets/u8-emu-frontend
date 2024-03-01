@@ -79,7 +79,7 @@ console_fg = '#cccccc'
 # Pygame text color.
 pygame_color = (255, 255, 255)
 
-# Y coordinate of the text.
+# Y coordinate of the text. (default: 22)
 text_y = 22
 
 # Top left corner of the screen. *
@@ -98,7 +98,7 @@ pix = 3
 # Small pixel size. Only used for SOLAR II.
 # pix_s = None
 
-# Pixel color. Optional; default is (0, 0, 0).
+# Pixel color. (default: (0, 0, 0))
 pix_color = (0, 0, 0)
 
 # Hex display window size.
