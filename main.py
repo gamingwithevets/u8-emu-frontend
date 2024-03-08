@@ -977,7 +977,7 @@ class CallStackDisplay(tk.Toplevel):
 			a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
 
 		if wm_state == 'normal': self.info_label['text'] = f'''\
-=== CALL STACK ===
+=== CALL STACK === ({len(self.sim.call_trace)} calls)
 {''.join(a)}
 '''
 
