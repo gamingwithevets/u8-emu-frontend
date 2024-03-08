@@ -643,7 +643,7 @@ class Jump(tk.Toplevel):
 		self.sim.sim.core.regs.csr = int(csr_entry, 16) if csr_entry else 0
 		self.sim.sim.core.regs.pc = int(pc_entry, 16) if pc_entry else 0
 		self.sim.stop_mode = False
-		self.sim.reg_display.print_regs()
+		self.sim.update_displays()
 		self.withdraw()
 
 		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
@@ -734,7 +734,7 @@ class Write(tk.Toplevel):
 			self.sim.write_dmem(adr + index, num, int.from_bytes(byte[index:index+num], 'little'), seg)
 			index += num
 
-		self.sim.reg_display.print_regs()
+		self.sim.update_displays()
 		self.sim.data_mem.get_mem()
 		self.withdraw()
 
@@ -860,7 +860,7 @@ class GPModify(tk.Toplevel):
 	def modify(self):
 		self.withdraw()
 		self.sim.sim.core.regs.gp[int(self.reg_var.get())] = int(self.byte_entry.get(), 16)
-		self.sim.reg_display.print_regs()
+		self.sim.update_displays()
 
 		self.reg_var.set('0')
 
@@ -971,15 +971,76 @@ class CallStackDisplay(tk.Toplevel):
 
 		nl = '\n'
 
-		a = []
-		for j in range(len(self.sim.call_trace)):
-			i = self.sim.call_trace[j]
-			a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
 
-		if wm_state == 'normal': self.info_label['text'] = f'''\
+		if wm_state == 'normal':
+			a = []
+			for j in range(len(self.sim.call_trace)):
+				i = self.sim.call_trace[j]
+				a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
+
+			self.info_label['text'] = f'''\
 === CALL STACK === ({len(self.sim.call_trace)} calls)
 {''.join(a)}
 '''
+
+class Debugger(tk.Toplevel):
+	def __init__(self, sim):
+		super(Debugger, self).__init__()
+		self.sim = sim
+
+		self.withdraw()
+		self.geometry('1200x600')
+		self.resizable(False, False)
+		self.title('Debugger (beta)')
+		self.protocol('WM_DELETE_WINDOW', self.withdraw)
+
+		f_disas = tk.Frame(self, width = 800, height = 300)
+		f_disas.grid(row = 0, column = 0, sticky = 'nw')
+		f_disas.pack_propagate(False)
+		ttk.Label(f_disas, text = 'Disassembly').pack()
+
+		f_regs = tk.Frame(self, width = 800, height = 300)
+		f_regs.grid(row = 0, column = 0, sticky = 'sw')
+		f_regs.pack_propagate(False)
+		ttk.Label(f_regs, text = 'Register list').pack()
+		
+		f_call = tk.Frame(self, width = 400, height = 600)
+		f_call.grid(row = 0, column = 1, sticky = 'se')
+		f_call.pack_propagate(False)
+		ttk.Label(f_call, text = 'Call stack\n(Note: actual stack data may be different)', justify = 'center').pack()
+		self.call_stack = tk.Text(f_call, state = 'disabled')
+		scroll = tk.Scrollbar(f_call, orient = 'vertical', command = self.call_stack.yview)
+		self.call_stack.configure(yscrollcommand = scroll.set)
+		scroll.pack(side = 'right', fill = 'y')
+		self.call_stack.pack(side = 'left', fill = 'both', expand = True)
+	def open(self):
+		self.deiconify()
+		self.update()
+
+	def update(self):
+		try: wm_state = self.wm_state()
+		except Exception: return
+
+		regs = self.sim.sim.core.regs
+
+		nl = '\n'
+
+		if wm_state == 'normal':
+			# TODO: disassembly and registers
+
+			a = []
+			for j in range(len(self.sim.call_trace)):
+				i = self.sim.call_trace[j]
+				a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
+			self.call_stack['state'] = 'normal'
+			self.call_stack.delete('1.0', 'end')
+			self.call_stack.insert('1.0', f'''\
+{len(self.sim.call_trace)} calls
+
+{''.join(a)}
+''')
+			self.call_stack['state'] = 'disabled'
+
 
 class WDT:
 	def __init__(self, sim):
@@ -1151,6 +1212,7 @@ class Sim:
 		self.gp_modify = GPModify(self)
 		self.reg_display = RegDisplay(self)
 		self.call_display = CallStackDisplay(self)
+		self.debugger = Debugger(self)
 		self.wdt = WDT(self)
 		if bcd: self.bcd = BCD(self)
 		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py containing a "BCD" class with at least a "tick" function.')
@@ -1262,6 +1324,7 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Register display', accelerator = 'R', command = self.reg_display.open)
 		self.rc_menu.add_command(label = 'Call stack display', command = self.call_display.open)
+		self.rc_menu.add_command(label = 'Debugger (beta)', command = self.debugger.open)
 		self.rc_menu.add_separator()
 
 		self.screen_stuff = {
@@ -1539,7 +1602,7 @@ class Sim:
 
 		self.single_step = val
 		if val:
-			self.reg_display.print_regs()
+			self.update_displays()
 			self.data_mem.get_mem()
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
 
@@ -1717,7 +1780,14 @@ class Sim:
 		if not self.single_step:
 			self.set_single_step(True)
 			self.reg_display.open()
+			self.call_display.open()
+			self.debugger.open()
 			self.keys_pressed.clear()
+
+	def update_displays(self):
+		self.reg_display.print_regs()
+		self.call_display.print_regs()
+		self.debugger.update()
 
 	def save_flash(self):
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
@@ -1946,7 +2016,7 @@ class Sim:
 
 		self.stop_mode = False
 		self.prev_csr_pc = None
-		self.reg_display.print_regs()
+		self.update_displays()
 		self.data_mem.get_mem()
 
 	def exit_sim(self):
@@ -1960,7 +2030,7 @@ class Sim:
 	def pygame_loop(self):
 		if self.single_step and self.step: self.core_step()
 		if (self.single_step and self.step) or not self.single_step:
-			self.reg_display.print_regs()
+			self.update_displays()
 			if self.data_mem.winfo_viewable(): self.data_mem.get_mem()
 
 		self.clock.tick()
