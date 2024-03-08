@@ -1013,6 +1013,7 @@ class Debugger(tk.Toplevel):
 		self.call_stack.configure(yscrollcommand = scroll.set)
 		scroll.pack(side = 'right', fill = 'y')
 		self.call_stack.pack(side = 'left', fill = 'both', expand = True)
+		
 	def open(self):
 		self.deiconify()
 		self.update()
@@ -1031,7 +1032,7 @@ class Debugger(tk.Toplevel):
 			a = []
 			for j in range(len(self.sim.call_trace)):
 				i = self.sim.call_trace[j]
-				a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
+				a.append(f'#{j}{nl}⇨ {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}⇦ {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
 			self.call_stack['state'] = 'normal'
 			self.call_stack.delete('1.0', 'end')
 			self.call_stack.insert('1.0', f'''\
