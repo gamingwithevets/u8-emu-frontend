@@ -918,7 +918,7 @@ R8   R9   R10  R11  R12  R13  R14  R15
 Control registers:
 CSR:PC          {self.sim.get_addr_label(csr, pc)}
 Previous CSR:PC {self.sim.prev_csr_pc} -- Prev. Prev.: {self.sim.prev_prev_csr_pc}
-Opcode          ''' + ' '.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(ins_len // 2)) + f'''
+Opcode          ''' + ''.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(ins_len // 2)) + f'''
 Instruction     {ins}
 SP              {sp:04X}H
 Words @ SP      ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(0, 8, 2)) + f'''
@@ -988,6 +988,8 @@ class Debugger(tk.Toplevel):
 		super(Debugger, self).__init__()
 		self.sim = sim
 
+		self.disas_hi = 17
+
 		self.withdraw()
 		self.geometry('1200x600')
 		self.resizable(False, False)
@@ -998,6 +1000,8 @@ class Debugger(tk.Toplevel):
 		f_disas.grid(row = 0, column = 0, sticky = 'nw')
 		f_disas.pack_propagate(False)
 		ttk.Label(f_disas, text = 'Disassembly').pack()
+		self.disas = tk.Text(f_disas, state = 'disabled', height = self.disas_hi)
+		self.disas.pack(fill = 'x')
 
 		f_regs = tk.Frame(self, width = 800, height = 300)
 		f_regs.grid(row = 0, column = 0, sticky = 'sw')
@@ -1027,7 +1031,49 @@ class Debugger(tk.Toplevel):
 		nl = '\n'
 
 		if wm_state == 'normal':
-			# TODO: disassembly and registers
+			# TODO: registers
+
+			instructions = ['']*self.disas_hi
+			middle = self.disas_hi // 2
+			cur_csr = regs.csr
+			cur_pc = regs.pc
+			format_ins = lambda i, ins_len, inst, offset = 0: f'{">>>" if i == middle else "   "} {cur_csr:X}:{cur_pc + offset:04X}H    {"".join(format(self.sim.read_cmem((cur_pc + offset + i*2) & 0xfffe, cur_csr), "04X") for i in range(ins_len // 2)):<13}    {inst}'
+			for i in range(middle, self.disas_hi):
+				ins, ins_len = self.sim.decode_instruction(cur_csr, cur_pc)
+				instructions[i] = format_ins(i, ins_len, ins)
+				cur_pc = (cur_pc + ins_len) & 0xfffe
+			i = middle - 1
+			cur_pc = regs.pc
+			while i > -1:
+				cur_pc = (cur_pc - 6) & 0xfffe
+				ins, ins_len = self.sim.decode_instruction(cur_csr, cur_pc)
+				if ins_len < 6:
+					ins2, ins_len2 = self.sim.decode_instruction(cur_csr, cur_pc + ins_len)
+					if ins_len2 < 6 - ins_len:
+						ins3, ins_len3 = self.sim.decode_instruction(cur_csr, cur_pc + ins_len + ins_len2)
+						if ins_len3 > 2:
+							ins_len3 = 2
+							ins3 += '\t; misaligned'
+						instructions[i] = format_ins(i, ins_len3, ins3, ins_len + ins_len2)
+						i -= 1
+						if i < 0: break
+						instructions[i] = format_ins(i, ins_len2, ins2, ins_len)
+						i -= 1
+						if i < 0: break
+						instructions[i] = format_ins(i, ins_len, ins)
+					else:
+						instructions[i] = format_ins(i, ins_len2, ins2, ins_len)
+						i -= 1
+						if i < 0: break
+						instructions[i] = format_ins(i, ins_len, ins)
+				else:
+					instructions[i] = format_ins(i, ins_len, ins)
+				i -= 1
+
+			self.disas['state'] = 'normal'
+			self.disas.delete('1.0', 'end')
+			self.disas.insert('1.0', nl.join(instructions))
+			self.disas['state'] = 'disabled'
 
 			a = []
 			for j in range(len(self.sim.call_trace)):
@@ -1602,9 +1648,7 @@ class Sim:
 		if self.single_step == val: return
 
 		self.single_step = val
-		if val:
-			self.update_displays()
-			self.data_mem.get_mem()
+		if val: self.update_displays()
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
 
 	def open_popup(self, x):
@@ -1789,6 +1833,7 @@ class Sim:
 		self.reg_display.print_regs()
 		self.call_display.print_regs()
 		self.debugger.update()
+		self.data_mem.get_mem()
 
 	def save_flash(self):
 		f = tk.filedialog.asksaveasfile(mode = 'wb', initialfile = 'flash.bin', defaultextension = '.bin', filetypes = [('All Files', '*.*'), ('Binary Files', '*.bin')])
@@ -1815,9 +1860,12 @@ class Sim:
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
 
-	def decode_instruction(self):
+	def decode_instruction(self, csr = None, pc = None):
+		if csr is None: csr = self.sim.core.regs.csr
+		if pc is None: pc = self.sim.core.regs.pc
+
 		self.disas.input_file = b''
-		for i in range(3): self.disas.input_file += self.read_cmem((self.sim.core.regs.pc + i*2) & 0xfffe, self.sim.core.regs.csr).to_bytes(2, 'little')
+		for i in range(3): self.disas.input_file += self.read_cmem((pc + i*2) & 0xfffe, csr).to_bytes(2, 'little')
 		self.disas.addr = 0
 		ins_str, ins_len, dsr_prefix, _ = self.disas.decode_ins(True)
 		if dsr_prefix:
@@ -2015,10 +2063,10 @@ class Sim:
 			self.sim.sfr[1] = 0x30
 			for i in range(0x10, 0x4f): self.sim.sfr[i] = 0
 
+		self.call_trace = []
 		self.stop_mode = False
 		self.prev_csr_pc = None
 		self.update_displays()
-		self.data_mem.get_mem()
 
 	def exit_sim(self):
 		if self.rom8: os.remove(config.interface_path)
@@ -2030,9 +2078,7 @@ class Sim:
 
 	def pygame_loop(self):
 		if self.single_step and self.step: self.core_step()
-		if (self.single_step and self.step) or not self.single_step:
-			self.update_displays()
-			if self.data_mem.winfo_viewable(): self.data_mem.get_mem()
+		if (self.single_step and self.step) or not self.single_step: self.update_displays()
 
 		self.clock.tick()
 
