@@ -21,7 +21,7 @@ NOTE: **This frontend uses CairoSVG.** That means if you're on Windows or macOS
  you need to obtain the necessary libcairo library for your platform and add it to your PATH or copy it to the root of this repo. However **it is only needed for loading ROM8 SVG images**, so you don't have to worry about it too much unless you use a ROM8 with an SVG image.
 
 # Usage
-When you open the emulator, you can right-click to see the available functions of the emulator. To step, press the backslash (`\`) key.
+When you open the emulator, you can right-click to see the available functions of the emulator. To step [step into], press the backslash (`\`) key while in **single-step** mode.
 
 To use a custom configuration Python script:
 - Run `python main.py <script-path>`. `<script-path>` is the path to your configuration script.

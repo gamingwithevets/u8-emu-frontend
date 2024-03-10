@@ -996,6 +996,10 @@ class Debugger(tk.Toplevel):
 		self.title('Debugger (beta)')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
+		self.bind('\\', lambda x: self.sim.set_step())
+		self.sim.bind_(self, 's', lambda x: self.sim.set_single_step(True))
+		self.sim.bind_(self, 'p', lambda x: self.sim.set_single_step(False))
+
 		f_disas = tk.Frame(self, width = 800, height = 300)
 		f_disas.grid(row = 0, column = 0, sticky = 'nw')
 		f_disas.pack_propagate(False)
@@ -1007,7 +1011,17 @@ class Debugger(tk.Toplevel):
 		f_regs.grid(row = 0, column = 0, sticky = 'sw')
 		f_regs.pack_propagate(False)
 		ttk.Label(f_regs, text = 'Register list').pack()
-		
+		r_frame_outer = tk.Frame(f_regs)
+		r_frame = []; r_entry = []; self.r = []
+		for i in range(16):
+			r_frame.append(tk.Frame(r_frame_outer))
+			self.r.append(tk.StringVar())
+			r_entry.append(ttk.Entry(r_frame[i], width = 3, state = 'readonly', textvariable = self.r[i]))
+			r_entry[i].pack()
+			ttk.Label(r_frame[i], text = f'R{i}').pack(side = 'bottom')
+			r_frame[i].pack(side = 'left', expand = True)
+		r_frame_outer.pack(fill = 'x')
+
 		f_call = tk.Frame(self, width = 400, height = 600)
 		f_call.grid(row = 0, column = 1, sticky = 'se')
 		f_call.pack_propagate(False)
@@ -1031,49 +1045,22 @@ class Debugger(tk.Toplevel):
 		nl = '\n'
 
 		if wm_state == 'normal':
-			# TODO: registers
-
 			instructions = ['']*self.disas_hi
-			middle = self.disas_hi // 2
 			cur_csr = regs.csr
 			cur_pc = regs.pc
-			format_ins = lambda i, ins_len, inst, offset = 0: f'{">>>" if i == middle else "   "} {cur_csr:X}:{cur_pc + offset:04X}H    {"".join(format(self.sim.read_cmem((cur_pc + offset + i*2) & 0xfffe, cur_csr), "04X") for i in range(ins_len // 2)):<13}    {inst}'
-			for i in range(middle, self.disas_hi):
+			format_ins = lambda ins_len, inst: f'{">>>" if i == 0 else "   "} {cur_csr:X}:{cur_pc:04X}H    {"".join(format(self.sim.read_cmem((cur_pc + i*2) & 0xfffe, cur_csr), "04X") for i in range(ins_len // 2)):<13}    {inst}'
+			for i in range(self.disas_hi):
 				ins, ins_len = self.sim.decode_instruction(cur_csr, cur_pc)
-				instructions[i] = format_ins(i, ins_len, ins)
+				instructions[i] = format_ins(ins_len, ins)
 				cur_pc = (cur_pc + ins_len) & 0xfffe
-			i = middle - 1
-			cur_pc = regs.pc
-			while i > -1:
-				cur_pc = (cur_pc - 6) & 0xfffe
-				ins, ins_len = self.sim.decode_instruction(cur_csr, cur_pc)
-				if ins_len < 6:
-					ins2, ins_len2 = self.sim.decode_instruction(cur_csr, cur_pc + ins_len)
-					if ins_len2 < 6 - ins_len:
-						ins3, ins_len3 = self.sim.decode_instruction(cur_csr, cur_pc + ins_len + ins_len2)
-						if ins_len3 > 2:
-							ins_len3 = 2
-							ins3 += '\t; misaligned'
-						instructions[i] = format_ins(i, ins_len3, ins3, ins_len + ins_len2)
-						i -= 1
-						if i < 0: break
-						instructions[i] = format_ins(i, ins_len2, ins2, ins_len)
-						i -= 1
-						if i < 0: break
-						instructions[i] = format_ins(i, ins_len, ins)
-					else:
-						instructions[i] = format_ins(i, ins_len2, ins2, ins_len)
-						i -= 1
-						if i < 0: break
-						instructions[i] = format_ins(i, ins_len, ins)
-				else:
-					instructions[i] = format_ins(i, ins_len, ins)
-				i -= 1
 
 			self.disas['state'] = 'normal'
 			self.disas.delete('1.0', 'end')
 			self.disas.insert('1.0', nl.join(instructions))
 			self.disas['state'] = 'disabled'
+
+			for i in range(16):
+				if self.r[i].get() != f'{self.sim.sim.core.regs.gp[i]:02X}': self.r[i].set(f'{self.sim.sim.core.regs.gp[i]:02X}')
 
 			a = []
 			for j in range(len(self.sim.call_trace)):
