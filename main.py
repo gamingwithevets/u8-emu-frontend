@@ -1744,9 +1744,9 @@ class Sim:
 
 			ins_word = self.read_cmem(self.sim.core.regs.pc, self.sim.core.regs.csr)
 			# BL Cadr
-			if ins_word & 0xf0ff == 0xf001: self.call_trace.insert(0, [((ins_word >> 8 & 0xf) << 16) + self.read_cmem(self.sim.core.regs.pc+2, self.sim.core.regs.csr), (self.sim.core.regs.csr << 16) + (self.sim.core.regs.pc + 4) & 0xfffe])
+			if ins_word & 0xf0ff == 0xf001: self.call_trace.insert(0, [((ins_word >> 8 & 0xf) << 16) + self.read_cmem(self.sim.core.regs.pc+2, self.sim.core.regs.csr), (self.sim.core.regs.csr << 16) + ((self.sim.core.regs.pc + 4) & 0xfffe)])
 			# BL ERn
-			elif ins_word & 0xff0f == 0xf003: self.call_trace.insert(0, [(self.sim.core.regs.csr << 16) + self.sim.read_reg_er(ins_word >> 4 & 0xf), (self.sim.core.regs.csr << 16) + (self.sim.core.regs.pc + 2) & 0xfffe])
+			elif ins_word & 0xff0f == 0xf003: self.call_trace.insert(0, [(self.sim.core.regs.csr << 16) + self.sim.read_reg_er(ins_word >> 4 & 0xf), (self.sim.core.regs.csr << 16) + ((self.sim.core.regs.pc + 2) & 0xfffe)])
 			# RT/POP PC
 			elif ins_word == 0xfe1f or ins_word & 0xf2ff == 0xf28e:
 				if len(self.call_trace) > 0: del self.call_trace[0]
