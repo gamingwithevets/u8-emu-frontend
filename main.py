@@ -1794,8 +1794,8 @@ class Sim:
 
 			if len(self.brkpoints) > 0:
 				if self.find_brkpoint((self.sim.core.regs.csr << 16) + self.sim.core.regs.pc, 0): self.hit_brkpoint()
-				if self.sim.core.last_read_size != 0 and self.sim.core.last_read <= self.find_brkpoint(i, 1) < self.sim.core.last_read + self.sim.core.last_read_size: self.hit_brkpoint()
-				if self.sim.core.last_write_size != 0 and self.sim.core.last_write <= self.find_brkpoint(i, 2) < self.sim.core.last_write + self.sim.core.last_write_size: self.hit_brkpoint()
+				if self.sim.core.last_read_size != 0 and any(self.find_brkpoint(i, 1) for i in range(self.sim.core.last_read, self.sim.core.last_read + self.sim.core.last_read_size)): self.hit_brkpoint()
+				if self.sim.core.last_write_size != 0 and any(self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
 			if self.stop_mode: self.timer()
