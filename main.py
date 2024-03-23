@@ -227,17 +227,18 @@ class Core:
 		]
 
 
-		if config.hardware_id == 4: regions.extend((
+		if config.hardware_id == 4:
+			regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000, 0x4FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg,   0x00000)))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
 			))
+			if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x40000, 0x4FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
 		elif config.hardware_id == 5:
 			regions.extend((
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0x8FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg,   0x00000)))),
 			))
+			if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
 
 		elif config.hardware_id == 6:
 			regions.extend((
@@ -284,7 +285,22 @@ class Core:
 			return
 
 		try:
-			if config.hardware_id == 6:
+			if config.hardware_id == 5:
+				if config.real_hardware:
+					self.sfr[addr] = value
+					if addr >= 0x800:
+						y, x = self.get_idx(addr - 0x800)
+						if self.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
+						else: self.sim.cwii_screen_lo[y][x] = value
+					elif addr == 0xd1: self.sfr[addr] = 6 if self.sfr[0xd0] == 3 and self.sfr[0xd2] == 0 and value == 5 else value
+				elif addr == 0x312:
+					if self.sim.shutdown_accept:
+						if value == 0x5a:
+							self.sfr[0x31] = 3
+							self.sim.shutdown = True
+						elif value != 0x3c: self.sim.shutdown_accept = False
+					elif value == 0x3c: self.sim.shutdown_accept = True
+			elif config.hardware_id == 6:
 				if addr == 0xe: self.sfr[addr] = value == 0x5a
 				elif addr == 0x900: self.sfr[addr] = 0x34
 				elif addr == 0x901: self.sfr[addr] = value == 0
@@ -306,6 +322,10 @@ class Core:
 		except Exception as e: logging.error(f'{type(e).__name__} reading from {0xf000+addr:04X}H: {e}')
 
 	def battery(self, core, seg, addr): return 0xff
+
+	@staticmethod
+	@functools.lru_cache
+	def get_idx(x): return x // 32, x % 32
 
 # https://github.com/JamesGKent/python-tkwidgets/blob/master/Debounce.py
 class Debounce():
@@ -757,8 +777,9 @@ class DataMem(tk.Toplevel):
 		f'RAM (00:{self.sim.sim.sdata[0]:04X}H - 00:{sum(self.sim.sim.sdata) - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
-		if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
-		elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
+		if config.real_hardware:
+			if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
+			elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
 		elif config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
 		if config.hardware_id == 2 and self.sim.is_5800p: segments.append('Flash RAM (04:0000H - 04:7FFFH)')
 
@@ -1463,6 +1484,10 @@ class Sim:
 		self.bind_(self.root, 'r', lambda x: self.reg_display.open())
 		if config.hardware_id not in (0, 6): self.bind_(self.root, 'd', lambda x: self.disp_lcd.set((self.disp_lcd.get() + 1) % (self.num_buffers + 1)))
 
+		if config.hardware_id == 5 and config.real_hardware:
+			self.cwii_screen_hi = [bytearray(32) for _ in range(64)]
+			self.cwii_screen_lo = [bytearray(32) for _ in range(64)]
+
 		self.single_step = True
 		self.ok = True
 		self.step = False
@@ -1474,6 +1499,8 @@ class Sim:
 		self.prev_prev_csr_pc = None
 		self.stop_accept = self.get_var('stop_accept', ctypes.c_bool * 2)
 		self.stop_mode = False
+		self.shutdown_accept = False
+		self.shutdown = False
 
 		self.nsps = 1e9
 		self.max_ns_per_update = 1e9
@@ -1736,6 +1763,7 @@ class Sim:
 			self.int_timer = 2
 
 	def core_step(self):
+		if self.shutdown: return
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		if not self.stop_mode:
 			wdp = self.sim.sfr[0xe] & 1
@@ -2006,28 +2034,29 @@ class Sim:
 
 	@staticmethod
 	@functools.lru_cache
-	def get_scr_data_cwii(addr, scr_bytes_lo, scr_bytes_hi):
+	def get_scr_data_cwii(scr_bytes_lo, scr_bytes_hi):
 		sbar = scr_bytes_lo[0]
+		sbar1 = scr_bytes_hi[0]
 
 		screen_data_status_bar = [
-		sbar[1]    & 1,  # [S]
-		sbar[3]    & 1,  # √[]/
-		sbar[4]    & 1,  # [D]
-		sbar[5]    & 1,  # [R]
-		sbar[6]    & 1,  # [G]
-		sbar[7]    & 1,  # FIX
-		sbar[8]    & 1,  # SCI
-		sbar[0xa]  & 1,  # 𝐄
-		sbar[0xb]  & 1,  # 𝒊
-		sbar[0xc]  & 1,  # ∠
-		sbar[0xd]  & 1,  # ⇩
-		sbar[0xe]  & 1,  # (✓)
-		sbar[0x10]  & 1,  # ◀
-		sbar[0x11] & 1,  # ▼
-		sbar[0x12] & 1,  # ▲
-		sbar[0x13] & 1,  # ▶
-		sbar[0x15] & 1,  # ⏸
-		sbar[0x16] & 1,  # ☼
+		sbar[1]    & 1    + (2 if sbar1[1] & 1 else 0),  # [S]
+		sbar[3]    & 1    + (2 if sbar1[3] & 1 else 0),  # √[]/
+		sbar[4]    & 1    + (2 if sbar1[4] & 1 else 0),  # [D]
+		sbar[5]    & 1    + (2 if sbar1[5] & 1 else 0),  # [R]
+		sbar[6]    & 1    + (2 if sbar1[6] & 1 else 0),  # [G]
+		sbar[7]    & 1    + (2 if sbar1[7] & 1 else 0),  # FIX
+		sbar[8]    & 1    + (2 if sbar1[8] & 1 else 0),  # SCI
+		sbar[0xa]  & 1  + (2 if sbar1[0xa] & 1 else 0),  # 𝐄
+		sbar[0xb]  & 1  + (2 if sbar1[0xb] & 1 else 0),  # 𝒊
+		sbar[0xc]  & 1  + (2 if sbar1[0xc] & 1 else 0),  # ∠
+		sbar[0xd]  & 1  + (2 if sbar1[0xd] & 1 else 0),  # ⇩
+		sbar[0xe]  & 1  + (2 if sbar1[0xe] & 1 else 0),  # (✓)
+		sbar[0x10] & 1 + (2 if sbar1[0x10] & 1 else 0),  # ◀
+		sbar[0x11] & 1 + (2 if sbar1[0x11] & 1 else 0),  # ▼
+		sbar[0x12] & 1 + (2 if sbar1[0x12] & 1 else 0),  # ▲
+		sbar[0x13] & 1 + (2 if sbar1[0x13] & 1 else 0),  # ▶
+		sbar[0x15] & 1 + (2 if sbar1[0x15] & 1 else 0),  # ⏸
+		sbar[0x16] & 1 + (2 if sbar1[0x16] & 1 else 0),  # ☼
 		]
 
 		screen_data = [[(2 if scr_bytes_hi[1+i][j] & (1 << k) > 0 else 0) + (1 if scr_bytes_lo[1+i][j] & (1 << k) else 0) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
@@ -2052,6 +2081,7 @@ class Sim:
 
 		self.call_trace = []
 		self.stop_mode = False
+		self.shutdown = False
 		self.prev_csr_pc = None
 		self.update_displays()
 
@@ -2086,12 +2116,15 @@ class Sim:
 			self.display.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 
 			if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
+			elif config.hardware_id == 5 and config.real_hardware and not disp_lcd: scr_bytes = [bytes(i) for i in self.cwii_screen_lo]
 			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: scr_bytes = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + i*self.scr[1] if disp_lcd else 0xf800 + i*self.scr[0], self.scr[1]) for i in range(self.scr[2])]
 			if config.hardware_id == 6 and self.scr[3][0] is not None: scr_bytes = [0 if self.scr[3][1] is None else int.from_bytes(self.read_dmem_bytes(self.scr[3][1], 3), 'little')] + scr_bytes
 			if config.hardware_id == 5:
-				if disp_lcd: scr_bytes_hi = tuple(self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2]))
-				else: scr_bytes_hi = tuple(self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2]))
-				screen_data_status_bar, screen_data = self.get_scr_data_cwii(self.scr[3][disp_lcd-1] if disp_lcd else 0xf800, tuple(scr_bytes), scr_bytes_hi)
+				if config.real_hardware and not disp_lcd: scr_bytes_hi = [bytes(i) for i in self.cwii_screen_hi]
+				else:
+					if disp_lcd: scr_bytes_hi = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
+					else: scr_bytes_hi = [0xff]*self.scr[1] + [self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2])]
+				screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
 			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 			
 			scr_range = self.sim.sfr[0x30] & 7
