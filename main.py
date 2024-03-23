@@ -201,7 +201,7 @@ class Core:
 		self.sfr = (ctypes.c_uint8 * 0x1000)()
 		if hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
 
-		if config.hardware_id in (4, 5): self.rw_seg = (ctypes.c_uint8 * 0x10000)()
+		if config.hardware_id in (4, 5) and not config.real_hardware: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
 		read_functype = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
 		write_functype = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
@@ -777,7 +777,7 @@ class DataMem(tk.Toplevel):
 		f'RAM (00:{self.sim.sim.sdata[0]:04X}H - 00:{sum(self.sim.sim.sdata) - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
-		if config.real_hardware:
+		if not config.real_hardware:
 			if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 			elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
 		elif config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
