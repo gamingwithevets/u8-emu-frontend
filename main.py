@@ -293,13 +293,13 @@ class Core:
 						if self.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
 						else: self.sim.cwii_screen_lo[y][x] = value
 					elif addr == 0xd1: self.sfr[addr] = 6 if self.sfr[0xd0] == 3 and self.sfr[0xd2] == 0 and value == 5 else value
-				elif addr == 0x312:
+				if addr == 0x312:
 					if self.sim.shutdown_accept:
-						if value == 0x5a:
+						if value == 0x3c:
 							self.sfr[0x31] = 3
 							self.sim.shutdown = True
-						elif value != 0x3c: self.sim.shutdown_accept = False
-					elif value == 0x3c: self.sim.shutdown_accept = True
+						elif value != 0x5a: self.sim.shutdown_accept = False
+					elif value == 0x5a: self.sim.shutdown_accept = True
 			elif config.hardware_id == 6:
 				if addr == 0xe: self.sfr[addr] = value == 0x5a
 				elif addr == 0x900: self.sfr[addr] = 0x34
@@ -961,6 +961,8 @@ EPSW3           {regs.epsw[2]:02X}
 Other information:
 STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
+Shutdown acceptor        [{'x' if self.sim.shutdown_accept else ' '}]
+Shutdown state           [{'x' if self.sim.shutdown else ' '}]
 Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
 {nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if config.hardware_id == 6 else ''}\
 {(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
