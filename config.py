@@ -188,5 +188,6 @@ keymap = {
 # Keymap: use chars instead of keysyms. **
 use_char = False
 
-# Date and time format for logging module.
+# Date and time format for logging module. (optional)
+# Default: '%d/%m/%Y %H:%M:%S'
 dt_format = '%d/%m/%Y %H:%M:%S'

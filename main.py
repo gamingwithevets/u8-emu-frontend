@@ -1,5 +1,5 @@
 import io
-import os
+import os; os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = ''
 import PIL.Image
 import sys
 import math
@@ -44,7 +44,7 @@ if pygame.version.vernum < (2, 2, 0):
 	sys.exit()
 
 level = logging.INFO
-logging.basicConfig(format = '%(levelname)s: %(message)s', level = level)
+logging.basicConfig(datefmt = '%d/%m/%Y %H:%M:%S', format = '[%(asctime)s] %(levelname)s: %(message)s', level = level)
 
 # For ROM8 reading
 class DisplayBounds(ctypes.Structure):
@@ -1476,7 +1476,8 @@ class Sim:
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Reset core', command = self.reset_core)
 		self.rc_menu.add_command(label = 'Quit', command = self.exit_sim)
-
+		self.rc_menu.add_separator()
+		self.rc_menu.add_command(label = 'u8-emu-frontend by Steveyboi / GamingWithEvets Inc.', state = 'disabled')
 		self.root.bind('<Button-3>', self.open_popup)
 		self.root.bind('\\', lambda x: self.set_step())
 		self.bind_(self.root, 's', lambda x: self.set_single_step(True))
@@ -2186,9 +2187,32 @@ class Sim:
 		self.root.update()
 		self.root.after(0, self.pygame_loop)
 
+@staticmethod
+def report_exception(e, exc, tb):
+	if issubclass(type(exc), OSError):
+		if os.name == 'nt':
+			if exc.winerror: errno = f'WE{exc.winerror}'
+			else: errno = exc.errno
+		else: errno = exc.errno
+		if exc.filename:
+			fname = exc.filename
+			if exc.filename2: fname += f' -> {exc.filename2}'
+			fname += ':'
+		else: fname = ''
+		message = f"[{type(exc).__name__}] {fname} {exc.strerror} ({errno})"
+	else: message = f'[{type(exc).__name__}] {exc}'
+
+	logging.error(message)
+
 if __name__ == '__main__':
+	if len(sys.argv) != 2:
+		print('Usage:\n  main.py <script-path>\n  main.py <module-name>')
+		sys.exit()
+
+	logging.info(f'Importing config script {sys.argv[1]}')
 	spec = importlib.util.spec_from_file_location('config', sys.argv[1] if len(sys.argv) > 1 else 'config.py')
 	if spec is None:
+		logging.warning(f'Cannot import config script as file, importing as module')
 		try: config = importlib.import_module(sys.argv[1] if len(sys.argv) > 1 else 'config')
 		except ImportError as e:
 			logging.error(f'Cannot import config script as module: {str(e)}')
@@ -2198,7 +2222,10 @@ if __name__ == '__main__':
 		sys.modules['config'] = config
 		spec.loader.exec_module(config)
 
-	if hasattr(config, 'dt_format'): logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level, force = True)
+	if hasattr(config, 'dt_format') and config.dt_format != '%d/%m/%Y %H:%M:%S':
+		logging.basicConfig(datefmt = config.dt_format, format = '[%(asctime)s] %(levelname)s: %(message)s', level = level, force = True)
+		logging.info(f'Config script imported sucessfully. Date-time format is {config.dt_format}')
+	else: logging.info('Config script imported sucessfully')
 
 	# Load the sim library
 	sim_lib = ctypes.CDLL(os.path.abspath(config.shared_lib))
@@ -2212,5 +2239,9 @@ if __name__ == '__main__':
 	sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
 	sim_lib.write_mem_data.restype = None
 
-	sim = Sim(no_klembord, bcd)
-	sim.run()
+	tk.Tk.report_callback_exception = report_exception
+
+	try:
+		sim = Sim(no_klembord, bcd)
+		sim.run()
+	except Exception: report_exception(*sys.exc_info())
