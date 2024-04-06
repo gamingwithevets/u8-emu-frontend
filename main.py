@@ -171,12 +171,16 @@ class Core:
 		if config.hardware_id == 6: self.core.u16_mode = True
 
 		# Initialise memory
-		self.rom_length = len(rom)
-		self.code_mem = (ctypes.c_uint8 * (0x80000 if config.hardware_id == 2 and self.sim.is_5800p else 0x100000))(*rom)
-		if config.hardware_id == 2 and self.sim.is_5800p:
-			self.flash_length = len(flash)
-			self.flash_mem = (ctypes.c_uint8 * 0x80000)(*flash)
-		else: self.flash_length = 0
+		if config.hardware_id == 5 and config.real_hardware:
+			self.rom_length = 0xfffff
+			self.code_mem = (ctypes.c_uint8 * 0x100000)(*rom, *rom)
+		else:
+			self.rom_length = len(rom)
+			self.code_mem = (ctypes.c_uint8 * (0x80000 if config.hardware_id == 2 and self.sim.is_5800p else 0x100000))(*rom)
+			if config.hardware_id == 2 and self.sim.is_5800p:
+				self.flash_length = len(flash)
+				self.flash_mem = (ctypes.c_uint8 * 0x80000)(*flash)
+			else: self.flash_length = 0
 
 		rwin_sizes = {
 		0: 0xdfff,
@@ -238,7 +242,7 @@ class Core:
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
 				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
 			))
-			if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
+			if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
 			else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
 
 		elif config.hardware_id == 6:
@@ -2205,11 +2209,11 @@ def report_exception(e, exc, tb):
 	logging.error(message)
 
 if __name__ == '__main__':
-	if len(sys.argv) != 2:
+	if len(sys.argv) > 2:
 		print('Usage:\n  main.py <script-path>\n  main.py <module-name>')
 		sys.exit()
 
-	logging.info(f'Importing config script {sys.argv[1]}')
+	logging.info(f'Importing config script {sys.argv[1] if len(sys.argv) > 1 else "config.py"}')
 	spec = importlib.util.spec_from_file_location('config', sys.argv[1] if len(sys.argv) > 1 else 'config.py')
 	if spec is None:
 		logging.warning(f'Cannot import config script as file, importing as module')
