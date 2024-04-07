@@ -305,6 +305,7 @@ class Core:
 							self.sim.shutdown = True
 						elif value != 0x5a: self.sim.shutdown_accept = False
 					elif value == 0x5a: self.sim.shutdown_accept = True
+				else: self.sfr[addr] = value
 			elif config.hardware_id == 6:
 				if addr == 0xe: self.sfr[addr] = value == 0x5a
 				elif addr == 0x900: self.sfr[addr] = 0x34
@@ -2131,7 +2132,7 @@ class Sim:
 				if config.real_hardware and not disp_lcd: scr_bytes_hi = [bytes(i) for i in self.cwii_screen_hi]
 				else:
 					if disp_lcd: scr_bytes_hi = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
-					else: scr_bytes_hi = [0xff]*self.scr[1] + [self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2])]
+					else: scr_bytes_hi = [self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2])]
 				screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
 			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 			
@@ -2193,7 +2194,8 @@ class Sim:
 
 @staticmethod
 def report_exception(e, exc, tb):
-	if issubclass(type(exc), OSError):
+	message = f'[{type(exc).__name__}] '
+	if issubclass(e, OSError):
 		if os.name == 'nt':
 			if exc.winerror: errno = f'WE{exc.winerror}'
 			else: errno = exc.errno
@@ -2203,10 +2205,11 @@ def report_exception(e, exc, tb):
 			if exc.filename2: fname += f' -> {exc.filename2}'
 			fname += ':'
 		else: fname = ''
-		message = f"[{type(exc).__name__}] {fname} {exc.strerror} ({errno})"
-	else: message = f'[{type(exc).__name__}] {exc}'
+		message += f"{fname} {exc.strerror} ({errno})"
+	else: message += str(exc)
 
-	logging.error(message)
+	logging.error(message + ' (full traceback below)')
+	for l in traceback.format_exc().split('\n'): logging.error(l)
 
 if __name__ == '__main__':
 	if len(sys.argv) > 2:
