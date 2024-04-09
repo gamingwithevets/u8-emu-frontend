@@ -168,7 +168,7 @@ class Core:
 		ko_mode = self.sim.ko_mode
 
 		self.core = u8_core_t()
-		if config.hardware_id == 6: self.core.u16_mode = True
+		if config.hardware_id in (0, 4, 5, 6): self.core.u16_mode = True
 
 		# Initialise memory
 		if config.hardware_id == 5 and config.real_hardware:
@@ -1887,7 +1887,10 @@ class Sim:
 	def decode_instruction(self, csr = None, pc = None):
 		if csr is None: csr = self.sim.core.regs.csr
 		if pc is None: pc = self.sim.core.regs.pc
+		return self.decode_instruction_(csr, pc)
 
+	@functools.lru_cache
+	def decode_instruction_(self, csr, pc):
 		self.disas.input_file = b''
 		for i in range(3): self.disas.input_file += self.read_cmem((pc + i*2) & 0xfffe, csr).to_bytes(2, 'little')
 		self.disas.addr = 0
