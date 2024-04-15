@@ -168,7 +168,7 @@ class Core:
 		ko_mode = self.sim.ko_mode
 
 		self.core = u8_core_t()
-		if config.hardware_id in (0, 4, 5, 6): self.core.u16_mode = True
+		if config.hardware_id in (4, 5, 6) and config.real_hardware: self.core.u16_mode = True
 
 		# Initialise memory
 		if config.hardware_id == 5 and config.real_hardware:
