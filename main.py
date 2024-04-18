@@ -1323,7 +1323,8 @@ class Sim:
 				if event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
 					nl = '\n'
 					keys = [repr(_) if self.use_char else _ for _ in v[1:] if _]
-					tk.messagebox.showinfo('Key information', f'KI: {k[0]}\nKO: {k[1]}\n\nBox: {p}\n{"Char" if self.use_char else "Keysym"}(s):\n{nl.join(keys) if len(keys) > 0 else "None"}')
+					kio_str = 'Core reset key.' if k is None else f'KI: {k[0]}\nKO: {k[1]}'
+					tk.messagebox.showinfo('Key information', f'{kio_str}\n\nBox: {p}\n{"Char" if self.use_char else "Keysym"}(s):\n{nl.join(keys) if len(keys) > 0 else "None"}')
 					break
 
 		def release_cb(event):
