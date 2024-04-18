@@ -1141,7 +1141,6 @@ class Sim:
 		self.ko_mode = config.ko_mode if hasattr(config, 'ko_mode') and config.ko_mode == 1 else 0
 		self.text_y = config.text_y if hasattr(config, 'text_y') else 22
 		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
-		self.pix_hi = config.pix_hi if hasattr(config, 'pix_hi') else config.pix
 		self.is_5800p = config.is_5800p if hasattr(config, 'is_5800p') else False
 		self.sample = config.sample if hasattr(config, 'sample') else False
 
@@ -1222,12 +1221,14 @@ class Sim:
 
 			if keymap != {}: config.keymap = keymap
 			if 'model' in props: config.root_w_name = props['model']
-			logging.info('ROM8 properties:\n' + '\n'.join([f'{k}: {v}' for k, v in props.items()]))
+			for k, v in props.items(): logging.info(f'{k}: {v}')
 		else:
 			rom = open(config.rom_file, 'rb').read()
 			if len(rom) % 2 != 0:
 				logging.error('ROM size cannot be odd')
 				sys.exit()
+
+		self.pix_hi = config.pix_hi if hasattr(config, 'pix_hi') else config.pix
 
 		if config.hardware_id == 2 and self.is_5800p:
 			flash = open(config.flash_rom_file, 'rb').read()
@@ -1314,6 +1315,16 @@ class Sim:
 								self.sim.sfr[0x14] = 2
 								if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
 					elif len(self.keys_pressed) == 0: self.curr_key = k
+					break
+
+		def display_key(event):
+			for k, v in config.keymap.items():
+				p = v[0]
+				if event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
+					nl = '\n'
+					keys = [repr(_) if self.use_char else _ for _ in v[1:] if _]
+					tk.messagebox.showinfo('Key information', f'KI: {k[0]}\nKO: {k[1]}\n\nBox: {p}\n{"Char" if self.use_char else "Keysym"}(s):\n{nl.join(keys) if len(keys) > 0 else "None"}')
+					break
 
 		def release_cb(event):
 			if config.hardware_id != 6:
@@ -1338,6 +1349,7 @@ class Sim:
 			embed_pygame.bind('<KeyPress>', press_cb)
 			embed_pygame.bind('<KeyRelease>', release_cb)
 			embed_pygame.bind('<ButtonPress-1>', press_cb)
+			embed_pygame.bind('<ButtonPress-2>', display_key)
 			embed_pygame.bind('<ButtonRelease-1>', release_cb)
 
 		if os.name != 'nt': self.root.update()
