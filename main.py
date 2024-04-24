@@ -1788,8 +1788,6 @@ class Sim:
 		if self.shutdown: return
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
 		if not self.stop_mode:
-			wdp = self.sim.sfr[0xe] & 1
-
 			prev_csrpc_int = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
 
 			ins_word = self.read_cmem(self.sim.core.regs.pc, self.sim.core.regs.csr)

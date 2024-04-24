@@ -13,7 +13,7 @@ void core_step(struct u8_core *core, bool real_hw, int hwid) {
 	
 	u8_step(core);
 	
-	core->regs.csr %= (real_hw && hwid == 3) ? 2 : 0x10;
+	core->regs.csr &= (real_hw && hwid == 3) ? 1 : 0xf;
 	if (hwid != 6) {
 		uint8_t stpacp = read_mem_data(core, 0, 0xf008, 1);
 		if (stop_accept[0]) {
