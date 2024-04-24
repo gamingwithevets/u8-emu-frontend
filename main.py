@@ -1798,6 +1798,10 @@ class Sim:
 			# RT/POP PC
 			elif ins_word == 0xfe1f or ins_word & 0xf2ff == 0xf28e:
 				if len(self.call_trace) > 0: del self.call_trace[0]
+			# BRK
+			elif ins_word == 0xffff:
+				tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
+				self.hit_brkpoint()
 
 			try: sim_lib.core_step(ctypes.pointer(self.sim.core), config.real_hardware, config.hardware_id)
 			except Exception as e: logging.error(e)
@@ -1809,10 +1813,6 @@ class Sim:
 			a = lambda x: x < self.sim.rom_length or 0x80000 <= x < 0x80000+self.sim.flash_length
 			if not a(csrpc) and a(prev_csrpc_int) and not self.single_step:
 				tk.messagebox.showwarning('Warning', 'Jumped to unallocated code memory!')
-				self.hit_brkpoint()
-
-			if csrpc == self.init_brk and not self.single_step:
-				tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
 				self.hit_brkpoint()
 
 			if config.hardware_id == 6:

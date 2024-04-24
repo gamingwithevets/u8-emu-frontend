@@ -11,9 +11,9 @@ void core_step(struct u8_core *core, bool real_hw, int hwid) {
 	
 	uint8_t wdp = read_mem_data(core, 0, 0xf00e, 1) & 1;
 	
+	core->regs.csr &= (real_hw && hwid == 3) ? 1 : 0xf;
 	u8_step(core);
 	
-	core->regs.csr &= (real_hw && hwid == 3) ? 1 : 0xf;
 	if (hwid != 6) {
 		uint8_t stpacp = read_mem_data(core, 0, 0xf008, 1);
 		if (stop_accept[0]) {
