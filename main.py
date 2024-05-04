@@ -12,6 +12,7 @@ import importlib
 import importlib.util
 import threading
 import traceback
+import webbrowser
 try:
 	import klembord
 	no_klembord = False
@@ -1483,6 +1484,12 @@ class Sim:
 		save_display.add_command(label = 'Save as...', command = lambda: self.save_display(False))
 		extra_funcs.add_cascade(label = 'Save display', menu = save_display)
 
+		if config.hardware_id in (4, 5) and not config.real_hardware:
+			qr_menu = tk.Menu(extra_funcs, tearoff = 0)
+			qr_menu.add_command(label = 'Copy URL to clipboard', command = self.save_qr)
+			qr_menu.add_command(label = 'Open URL', command = self.open_qr)
+			extra_funcs.add_cascade(label = 'QR code export', menu = qr_menu)
+
 		self.rc_menu.add_cascade(label = 'Extra functions', menu = extra_funcs)
 		
 		options = tk.Menu(self.rc_menu, tearoff = 0)
@@ -1540,6 +1547,8 @@ class Sim:
 		# TI MathPrint only
 		self.screen_changed = False
 		self.curr_key = 0
+
+		self.qr_active = False
 
 	def get_var(self, var, typ): return typ.in_dll(sim_lib, var)
 
@@ -1710,7 +1719,10 @@ class Sim:
 		self.sim.sfr[0x40] = ki
 
 		if not config.real_hardware:
-			if self.read_emu_kb(0) in (2, 8) and [self.read_emu_kb(i) for i in (1, 2)] != [1<<2, 1<<4]: self.write_emu_kb(0, 0)
+			temp = self.read_emu_kb(0)
+			if temp in (2, 8) and [self.read_emu_kb(i) for i in (1, 2)] != [1<<2, 1<<4]: self.write_emu_kb(0, 0)
+			elif temp in (5, 7): self.qr_active = True
+			elif temp == 6: self.qr_active = False
 
 	def sbycon(self):
 		if self.sim.sfr[9] & (1 << 1):
@@ -1891,6 +1903,25 @@ class Sim:
 		else:
 			f = tk.filedialog.asksaveasfilename(initialfile = 'image.png', defaultextension = '.png', filetypes = [('All Files', '*.*'), ('Supported Image Files', '*.bmp *.tga *.png *.jpg *.jpeg')])
 			if f is not None: pygame.image.save(self.display, f)
+
+	def get_qr(self):
+		if self.qr_active:
+			url = bytearray()
+			x = 0xa800
+			while self.sim.rw_seg[x] != 0:
+				url.append(self.sim.rw_seg[x])
+				x += 1
+			return bytes(url).decode()
+		else: tk.messagebox.showerror('Error', 'No QR code is currently present on-screen!')
+
+	def save_qr(self):
+		if (url := self.get_qr()) is not None:
+			self.root.clipboard_clear()
+			self.root.clipboard_append(url)
+			self.root.update()
+
+	def open_qr(self):
+		if (url := self.get_qr()) is not None: webbrowser.open_new_tab(url)
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
