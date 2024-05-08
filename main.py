@@ -1387,6 +1387,8 @@ class Sim:
 		self.enable_fps_tk = tk.BooleanVar(value = self.enable_fps)
 		self.always_update = False
 		self.always_update_tk = tk.BooleanVar(value = self.always_update)
+		self.force_display = False
+		self.force_display_tk = tk.BooleanVar(value = self.force_display)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Step', accelerator = '\\', command = self.set_step)
@@ -1496,13 +1498,14 @@ class Sim:
 		options.add_checkbutton(label = 'IPS display (in register display)', variable = self.enable_ips_tk, command = self.set_enable_ips)
 		options.add_checkbutton(label = 'FPS display', variable = self.enable_fps_tk, command = self.set_enable_fps)
 		if config.hardware_id == 6: options.add_checkbutton(label = 'Always update display', variable = self.always_update_tk, command = self.set_always_update)
+		if config.hardware_id in (3, 4, 5): options.add_checkbutton(label = 'Force normal screen', variable = self.force_display_tk, command = self.set_force_display)
 		self.rc_menu.add_cascade(label = 'Options', menu = options)
 
 		self.rc_menu.add_separator()
 		self.rc_menu.add_command(label = 'Reset core', command = self.reset_core)
 		self.rc_menu.add_command(label = 'Quit', command = self.exit_sim)
 		self.rc_menu.add_separator()
-		self.rc_menu.add_command(label = 'u8-emu-frontend by Steveyboi / GamingWithEvets Inc.', state = 'disabled')
+		self.rc_menu.add_command(label = 'u8-emu-frontend by Steveyboi / GamingWithEvets Inc.', command = self.open_gh)
 		self.root.bind('<Button-3>', self.open_popup)
 		self.root.bind('\\', lambda x: self.set_step())
 		self.bind_(self.root, 's', lambda x: self.set_single_step(True))
@@ -1550,6 +1553,9 @@ class Sim:
 
 		self.qr_active = False
 
+	@staticmethod
+	def open_gh(): webbrowser.open_new_tab('https://github.com/gamingwithevets/u8-emu-frontend')
+
 	def get_var(self, var, typ): return typ.in_dll(sim_lib, var)
 
 	def set_enable_ips(self):
@@ -1561,6 +1567,7 @@ class Sim:
 
 	def set_enable_fps(self): self.enable_fps = self.enable_fps_tk.get()
 	def set_always_update(self): self.always_update = self.always_update_tk.get()
+	def set_force_display(self): self.force_display = self.force_display_tk.get()
 
 	def read_emu_kb(self, idx):
 		if config.hardware_id == 0: return self.sim.data_mem[0x800 + idx]
@@ -2181,8 +2188,8 @@ class Sim:
 				screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
 			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 			
-			scr_range = self.sim.sfr[0x30] & 7
-			scr_mode = self.sim.sfr[0x31] & 7
+			scr_range = 0 if self.force_display else self.sim.sfr[0x30] & 7
+			scr_mode = 5 if self.force_display else self.sim.sfr[0x31] & 7
 
 			if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
 				if self.status_bar is not None and hasattr(config, 'status_bar_crops') and 'screen_data_status_bar' in locals():
@@ -2254,7 +2261,8 @@ def report_exception(e, exc, tb):
 	else: message += str(exc)
 
 	logging.error(message + ' (full traceback below)')
-	for l in traceback.format_exc().split('\n'): logging.error(l)
+	for l in traceback.format_exc().split('\n'):
+		if l: logging.error(l)
 
 if __name__ == '__main__':
 	if len(sys.argv) > 2:
