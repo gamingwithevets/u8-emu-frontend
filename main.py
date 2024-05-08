@@ -1924,13 +1924,15 @@ class Sim:
 		else: tk.messagebox.showerror('Error', 'No QR code is currently present on-screen!')
 
 	def save_qr(self):
-		if (url := self.get_qr()) is not None:
+		url = self.get_qr()
+		if url is not None:
 			self.root.clipboard_clear()
 			self.root.clipboard_append(url)
 			self.root.update()
 
 	def open_qr(self):
-		if (url := self.get_qr()) is not None: webbrowser.open_new_tab(url)
+		url = self.get_qr()
+		if url is not None: webbrowser.open_new_tab(url)
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
