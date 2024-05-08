@@ -13,11 +13,13 @@ import importlib.util
 import threading
 import traceback
 import webbrowser
-try:
-	import klembord
-	no_klembord = False
-except ImportError: no_klembord = True
-if os.name == 'nt': import win32clipboard
+no_clipboard = False
+try: import klembord
+except ImportError:
+	if os.name == 'nt':
+		try: import win32clipboard
+		except ImportError: no_clipboard = True
+	else: no_clipboard = True
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.font
@@ -1127,8 +1129,8 @@ class WDT:
 		self.counter = self.ms[self.mode]
 
 class Sim:
-	def __init__(self, no_klembord, bcd):
-		self.copyclip = not no_klembord or (no_klembord and os.name == 'nt')
+	def __init__(self, no_clipboard, bcd):
+		self.copyclip = no_clipboard
 
 		try:
 			im = PIL.Image.open(config.status_bar_path)
@@ -1482,7 +1484,7 @@ class Sim:
 		if config.hardware_id == 2 and self.is_5800p: extra_funcs.add_command(label = 'Save flash ROM', command = self.save_flash)
 
 		save_display = tk.Menu(extra_funcs, tearoff = 0)
-		save_display.add_command(label = f'Copy to clipboard{" (klembord package required)" if not self.copyclip else ""}', state = 'normal' if self.copyclip else 'disabled', command = self.save_display)
+		save_display.add_command(label = f'Copy to clipboard{" ("+("pywin32" if os.name == "nt" else "klembord")+" package required)" if not self.copyclip else ""}', state = 'normal' if self.copyclip else 'disabled', command = self.save_display)
 		save_display.add_command(label = 'Save as...', command = lambda: self.save_display(False))
 		extra_funcs.add_cascade(label = 'Save display', menu = save_display)
 
@@ -2302,6 +2304,6 @@ if __name__ == '__main__':
 	tk.Tk.report_callback_exception = report_exception
 
 	try:
-		sim = Sim(no_klembord, bcd)
+		sim = Sim(no_clipboard, bcd)
 		sim.run()
 	except Exception: report_exception(*sys.exc_info())
