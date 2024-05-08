@@ -36,8 +36,8 @@ try:
 	bcd = True
 except ImportError: bcd = False
 
-if sys.version_info < (3, 6, 0, 'alpha', 4):
-	print(f'This program requires at least Python 3.6.0a4. (You are running Python {platform.python_version()})')
+if sys.version_info < (3, 8, 0):
+	print(f'This program requires at least Python 3.8.0. (You are running Python {platform.python_version()})')
 	sys.exit()
 
 if pygame.version.vernum < (2, 2, 0):
