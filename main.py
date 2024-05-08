@@ -1,11 +1,17 @@
 import io
 import os; os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = ''
-import PIL.Image
+try: import PIL.Image
+except ImportError:
+	print('Please install pillow!')
+	sys.exit()
 import sys
 import math
 import time
 import ctypes
-import pygame
+try: import pygame
+except ImportError:
+	print('Please install pygame!')
+	sys.exit()
 import logging
 import functools
 import importlib
