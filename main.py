@@ -26,7 +26,10 @@ except ImportError:
 		try: import win32clipboard
 		except ImportError: no_clipboard = True
 	else: no_clipboard = True
-import tkinter as tk
+try: import tkinter as tk
+except ImportError:
+	print('Please install tkinter!')
+	sys.exit()
 import tkinter.ttk as ttk
 import tkinter.font
 import tkinter.messagebox
