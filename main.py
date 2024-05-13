@@ -20,12 +20,11 @@ import threading
 import traceback
 import webbrowser
 no_clipboard = False
-try: import klembord
-except ImportError:
-	if os.name == 'nt':
-		try: import win32clipboard
-		except ImportError: no_clipboard = True
-	else: no_clipboard = True
+try:
+	if os.name == 'nt': import win32clipboard
+	else: import klembord
+	no_clipboard = True
+except ImportError: no_clipboard = True
 try: import tkinter as tk
 except ImportError:
 	print('Please install tkinter!')
