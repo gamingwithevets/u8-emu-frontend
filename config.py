@@ -28,6 +28,9 @@ hardware_id = 3
 # Enable this for "sample" CW ROMs. (optional)
 sample = False
 
+# Toggle Graph Light mode. Optional; default = False. Hardware type 5 only.
+is_graphlight = False
+
 # Toggle fx-5800P mode. Optional; default = False. Hardware type 2 only.
 is_5800p = False
 

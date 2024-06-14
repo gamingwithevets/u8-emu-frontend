@@ -575,6 +575,12 @@ class BrkpointFrame(tk.Frame):
 		self.gui = gui
 		self.index = index
 
+		self.show_exec_labels = len(self.gui.sim.labels) != 0
+		self.show_data_labels = len(self.gui.sim.disas.data_labels) != 0
+
+		if self.show_exec_labels: self.labels = self.gui.sim.labels
+		if self.show_data_labels: self.data_labels = self.gui.sim.disas.data_labels
+
 		self.type = tk.IntVar()
 
 		ttk.Button(self, text = 'X', width = 2, command = self.destroy).pack(side = 'right')
@@ -598,12 +604,19 @@ class BrkpointFrame(tk.Frame):
 		self.pc.bind('<KeyPress>', self.cap_input)
 		self.pc.pack(side = 'left')
 
-		ttk.Label(self, text = 'H').pack(side = 'left')
+		ttk.Label(self, text = 'H   ').pack(side = 'left')
+
+		self.label = tk.StringVar()
+		self.labelselect = ttk.Combobox(self, width = 27, textvariable = self.label)
+		if self.show_exec_labels:
+			self.labelselect['values'] = [f'{k >> 16:X}:{k & 0xfffe:04X}H - {("" if v[1] else self.labels[v[2]][0]) + v[0]}' for k, v in self.labels.items()]
+			self.labelselect.pack(side = 'left')
 
 		self.bind('<FocusOut>', self.focusout)
 
 	def change_type(self):
 		self.gui.sim.brkpoints[self.index]['type'] = self.type.get()
+		self.labelselect.pack_forget()
 
 		if self.type.get() == 0:
 			value = int(self.pc.get(), 16) & 0xfffe
@@ -615,9 +628,19 @@ class BrkpointFrame(tk.Frame):
 			self.csr.delete(0, 'end')
 			self.csr.insert(0, f'{value:X}')
 			self.csr['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x10))
+
+			if self.show_exec_labels:
+				self.label = ''
+				self.labelselect['values'] = [f'{k >> 16:X}:{k & 0xfffe:04X}H - {("" if v[1] else self.labels[v[2]][0]) + v[0]}' for k, v in self.labels.items()]
+				self.labelselect.pack(side = 'left')
 		else:
 			self.csr['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x100))
 			self.pc['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x10000))
+
+			if self.show_data_labels:
+				self.label = ''
+				self.labelselect['values'] = [f'{k >> 16}:{k & 0xfffe}H - {v}' for k, v in self.data_labels.items()]
+				self.labelselect.pack(side = 'left')
 
 	def cap_input(self, event):
 		if event.char.lower() in '0123456789abcdef':
@@ -1324,7 +1347,7 @@ class Sim:
 				if event.x in range(p[0], p[0]+p[2]) and event.y in range(p[1], p[1]+p[3]):
 					nl = '\n'
 					keys = [repr(_) if self.use_char else _ for _ in v[1:] if _]
-					kio_str = 'Core reset key.' if k is None else f'KI: {k[0]}\nKO: {k[1]}'
+					kio_str = 'Core reset key.' if k is None else f'KI: {k[0]}\nKO: {k[1]}' if config.hardware_id != 6 else f'Key ID: 0x{k:02x}'
 					tk.messagebox.showinfo('Key information', f'{kio_str}\n\nBox: {p}\n{"Char" if self.use_char else "Keysym"}(s):\n{nl.join(keys) if len(keys) > 0 else "None"}')
 					break
 
@@ -1839,7 +1862,7 @@ class Sim:
 				if last_swi < 0x40:
 					if last_swi == 1:
 						self.scr[3][0] = self.sim.read_reg_er(0)
-						self.sim.write_reg_er(0, 0)
+						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
 						self.screen_changed = True
 					elif last_swi == 2:
 						self.sim.core.regs.gp[1] = 0
@@ -1848,7 +1871,7 @@ class Sim:
 						self.curr_key = 0
 					elif last_swi == 4:
 						self.scr[3][1] = self.sim.read_reg_er(0)
-						self.sim.write_reg_er(0, 0)
+						self.sim.core.regs.gp[0] = self.sim.core.regs.gp[1] = 0
 						self.screen_changed = True
 
 			if self.enable_ips:
@@ -2099,26 +2122,50 @@ class Sim:
 		sbar = scr_bytes_lo[0]
 		sbar1 = scr_bytes_hi[0]
 
-		screen_data_status_bar = [
-		sbar[1]    & 1    + (2 if sbar1[1] & 1 else 0),  # [S]
-		sbar[3]    & 1    + (2 if sbar1[3] & 1 else 0),  # √[]/
-		sbar[4]    & 1    + (2 if sbar1[4] & 1 else 0),  # [D]
-		sbar[5]    & 1    + (2 if sbar1[5] & 1 else 0),  # [R]
-		sbar[6]    & 1    + (2 if sbar1[6] & 1 else 0),  # [G]
-		sbar[7]    & 1    + (2 if sbar1[7] & 1 else 0),  # FIX
-		sbar[8]    & 1    + (2 if sbar1[8] & 1 else 0),  # SCI
-		sbar[0xa]  & 1  + (2 if sbar1[0xa] & 1 else 0),  # 𝐄
-		sbar[0xb]  & 1  + (2 if sbar1[0xb] & 1 else 0),  # 𝒊
-		sbar[0xc]  & 1  + (2 if sbar1[0xc] & 1 else 0),  # ∠
-		sbar[0xd]  & 1  + (2 if sbar1[0xd] & 1 else 0),  # ⇩
-		sbar[0xe]  & 1  + (2 if sbar1[0xe] & 1 else 0),  # (✓)
-		sbar[0x10] & 1 + (2 if sbar1[0x10] & 1 else 0),  # ◀
-		sbar[0x11] & 1 + (2 if sbar1[0x11] & 1 else 0),  # ▼
-		sbar[0x12] & 1 + (2 if sbar1[0x12] & 1 else 0),  # ▲
-		sbar[0x13] & 1 + (2 if sbar1[0x13] & 1 else 0),  # ▶
-		sbar[0x15] & 1 + (2 if sbar1[0x15] & 1 else 0),  # ⏸
-		sbar[0x16] & 1 + (2 if sbar1[0x16] & 1 else 0),  # ☼
-		]
+		if hasattr(config, 'is_graphlight') and config.is_graphlight:
+			screen_data_status_bar = [
+			sbar[1]    & 1    + (2 if sbar1[1] & 1 else 0),  # [S]
+			sbar[3]    & 1    + (2 if sbar1[3] & 1 else 0),  # √[]/
+			sbar[4]    & 1    + (2 if sbar1[4] & 1 else 0),  # [Deg]
+			sbar[5]    & 1    + (2 if sbar1[5] & 1 else 0),  # [Rad]
+			sbar[6]    & 1    + (2 if sbar1[6] & 1 else 0),  # [Gra]
+			sbar[7]    & 1    + (2 if sbar1[7] & 1 else 0),  # FIX
+			sbar[8]    & 1    + (2 if sbar1[8] & 1 else 0),  # SCI
+			sbar[9]    & 1    + (2 if sbar1[8] & 1 else 0),  # f(𝑥)
+			sbar[0xa]  & 1  + (2 if sbar1[0xa] & 1 else 0),  # 𝐄
+			sbar[0xb]  & 1  + (2 if sbar1[0xb] & 1 else 0),  # 𝒊
+			sbar[0xc]  & 1  + (2 if sbar1[0xc] & 1 else 0),  # ∠
+			sbar[0xd]  & 1  + (2 if sbar1[0xd] & 1 else 0),  # ⇩
+			sbar[0xe]  & 1  + (2 if sbar1[0xe] & 1 else 0),  # (✓)
+			sbar[0xf]  & 1  + (2 if sbar1[0xe] & 1 else 0),  # g(𝑥)
+			sbar[0x10] & 1 + (2 if sbar1[0x10] & 1 else 0),  # ◀
+			sbar[0x11] & 1 + (2 if sbar1[0x11] & 1 else 0),  # ▼
+			sbar[0x12] & 1 + (2 if sbar1[0x12] & 1 else 0),  # ▲
+			sbar[0x13] & 1 + (2 if sbar1[0x13] & 1 else 0),  # ▶
+			sbar[0x15] & 1 + (2 if sbar1[0x15] & 1 else 0),  # ⏸
+			sbar[0x16] & 1 + (2 if sbar1[0x16] & 1 else 0),  # ☼
+			]
+		else:
+			screen_data_status_bar = [
+			sbar[1]    & 1    + (2 if sbar1[1] & 1 else 0),  # [S]
+			sbar[3]    & 1    + (2 if sbar1[3] & 1 else 0),  # √[]/
+			sbar[4]    & 1    + (2 if sbar1[4] & 1 else 0),  # [D]
+			sbar[5]    & 1    + (2 if sbar1[5] & 1 else 0),  # [R]
+			sbar[6]    & 1    + (2 if sbar1[6] & 1 else 0),  # [G]
+			sbar[7]    & 1    + (2 if sbar1[7] & 1 else 0),  # FIX
+			sbar[8]    & 1    + (2 if sbar1[8] & 1 else 0),  # SCI
+			sbar[0xa]  & 1  + (2 if sbar1[0xa] & 1 else 0),  # 𝐄
+			sbar[0xb]  & 1  + (2 if sbar1[0xb] & 1 else 0),  # 𝒊
+			sbar[0xc]  & 1  + (2 if sbar1[0xc] & 1 else 0),  # ∠
+			sbar[0xd]  & 1  + (2 if sbar1[0xd] & 1 else 0),  # ⇩
+			sbar[0xe]  & 1  + (2 if sbar1[0xe] & 1 else 0),  # (✓)
+			sbar[0x10] & 1 + (2 if sbar1[0x10] & 1 else 0),  # ◀
+			sbar[0x11] & 1 + (2 if sbar1[0x11] & 1 else 0),  # ▼
+			sbar[0x12] & 1 + (2 if sbar1[0x12] & 1 else 0),  # ▲
+			sbar[0x13] & 1 + (2 if sbar1[0x13] & 1 else 0),  # ▶
+			sbar[0x15] & 1 + (2 if sbar1[0x15] & 1 else 0),  # ⏸
+			sbar[0x16] & 1 + (2 if sbar1[0x16] & 1 else 0),  # ☼
+			]
 
 		screen_data = [[(2 if scr_bytes_hi[1+i][j] & (1 << k) > 0 else 0) + (1 if scr_bytes_lo[1+i][j] & (1 << k) else 0) for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
 
