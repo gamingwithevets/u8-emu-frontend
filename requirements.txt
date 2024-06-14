@@ -1,4 +1,4 @@
 pygame
+pillow
 cairosvg
 klembord
-pywin32

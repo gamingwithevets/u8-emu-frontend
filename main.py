@@ -1,11 +1,17 @@
 import io
 import os; os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = ''
-import PIL.Image
+try: import PIL.Image
+except ImportError:
+	print('Please install pillow!')
+	sys.exit()
 import sys
 import math
 import time
 import ctypes
-import pygame
+try: import pygame
+except ImportError:
+	print('Please install pygame!')
+	sys.exit()
 import logging
 import functools
 import importlib
@@ -13,12 +19,16 @@ import importlib.util
 import threading
 import traceback
 import webbrowser
+no_clipboard = False
 try:
-	import klembord
-	no_klembord = False
-except ImportError: no_klembord = True
-if os.name == 'nt': import win32clipboard
-import tkinter as tk
+	if os.name == 'nt': import win32clipboard
+	else: import klembord
+	no_clipboard = True
+except ImportError: no_clipboard = True
+try: import tkinter as tk
+except ImportError:
+	print('Please install tkinter!')
+	sys.exit()
 import tkinter.ttk as ttk
 import tkinter.font
 import tkinter.messagebox
@@ -36,8 +46,8 @@ try:
 	bcd = True
 except ImportError: bcd = False
 
-if sys.version_info < (3, 6, 0, 'alpha', 4):
-	print(f'This program requires at least Python 3.6.0a4. (You are running Python {platform.python_version()})')
+if sys.version_info < (3, 8, 0):
+	print(f'This program requires at least Python 3.8.0. (You are running Python {platform.python_version()})')
 	sys.exit()
 
 if pygame.version.vernum < (2, 2, 0):
@@ -1150,8 +1160,8 @@ class WDT:
 		self.counter = self.ms[self.mode]
 
 class Sim:
-	def __init__(self, no_klembord, bcd):
-		self.copyclip = not no_klembord or (no_klembord and os.name == 'nt')
+	def __init__(self, no_clipboard, bcd):
+		self.copyclip = no_clipboard
 
 		try:
 			im = PIL.Image.open(config.status_bar_path)
@@ -1505,7 +1515,7 @@ class Sim:
 		if config.hardware_id == 2 and self.is_5800p: extra_funcs.add_command(label = 'Save flash ROM', command = self.save_flash)
 
 		save_display = tk.Menu(extra_funcs, tearoff = 0)
-		save_display.add_command(label = f'Copy to clipboard{" (klembord package required)" if not self.copyclip else ""}', state = 'normal' if self.copyclip else 'disabled', command = self.save_display)
+		save_display.add_command(label = f'Copy to clipboard{" ("+("pywin32" if os.name == "nt" else "klembord")+" package required)" if not self.copyclip else ""}', state = 'normal' if self.copyclip else 'disabled', command = self.save_display)
 		save_display.add_command(label = 'Save as...', command = lambda: self.save_display(False))
 		extra_funcs.add_cascade(label = 'Save display', menu = save_display)
 
@@ -1945,13 +1955,15 @@ class Sim:
 		else: tk.messagebox.showerror('Error', 'No QR code is currently present on-screen!')
 
 	def save_qr(self):
-		if (url := self.get_qr()) is not None:
+		url = self.get_qr()
+		if url is not None:
 			self.root.clipboard_clear()
 			self.root.clipboard_append(url)
 			self.root.update()
 
 	def open_qr(self):
-		if (url := self.get_qr()) is not None: webbrowser.open_new_tab(url)
+		url = self.get_qr()
+		if url is not None: webbrowser.open_new_tab(url)
 
 	def core_step_loop(self):
 		while not self.single_step: self.core_step()
@@ -2349,6 +2361,6 @@ if __name__ == '__main__':
 	tk.Tk.report_callback_exception = report_exception
 
 	try:
-		sim = Sim(no_klembord, bcd)
+		sim = Sim(no_clipboard, bcd)
 		sim.run()
 	except Exception: report_exception(*sys.exc_info())
