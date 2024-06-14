@@ -2231,7 +2231,8 @@ class Sim:
 
 		disp_lcd = self.disp_lcd.get()
 
-		if not self.single_step and ((config.hardware_id == 6 and (self.screen_changed or self.always_update)) or config.hardware_id != 6):
+		if (not self.single_step and ((config.hardware_id == 6 and (self.screen_changed or self.always_update)) or config.hardware_id != 6)) or (self.single_step and (self.step or disp_lcd != self.curr_buffer)):
+			self.curr_buffer = disp_lcd
 			self.screen_changed = False
 			self.display.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 
