@@ -2212,6 +2212,7 @@ class Sim:
 			self.sim.sfr[0x900] = 6
 			self.sim.sfr[1] = 0x30
 			for i in range(0x10, 0x4f): self.sim.sfr[i] = 0
+		elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
 		self.call_trace = []
 		self.stop_mode = False
