@@ -6,6 +6,16 @@
 
 bool stop_accept[2];
 
+// Only necessary config parameters for peripheral handling
+struct peripheral
+{
+	int hwid;
+	bool real_hw;
+	bool sample;
+	bool is_5800p;
+	uint8_t pd_value;
+};
+
 void core_step(struct u8_core *core, bool real_hw, int hwid) {
 	write_mem_data(core, 0, 0xf000, 1, core->regs.dsr);
 	

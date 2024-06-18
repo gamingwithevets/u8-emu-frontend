@@ -13,6 +13,7 @@ except ImportError:
 	print('Please install pygame!')
 	sys.exit()
 import logging
+import cProfile
 import functools
 import importlib
 import importlib.util
@@ -40,6 +41,8 @@ from pyu8disas import main as disas_main
 from pyu8disas.labeltool import labeltool
 from tool8 import tool8
 import platform
+
+profile_mode = False
 
 try:
 	from bcd import BCD
@@ -283,7 +286,7 @@ class Core:
 
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 	
-	def read_reg_er(self, n): return (self.core.regs.gp[n+1] << 8) + self.core.regs.gp[n]
+	def read_reg_er(self, n): return sim_lib.read_reg_er(ctypes.pointer(self.core), n)
 
 	# Memory Access
 	def read_mem_data(self, dsr, offset, size): return sim_lib.read_mem_data(ctypes.pointer(self.core), dsr, offset, size)
@@ -316,17 +319,17 @@ class Core:
 							self.sim.shutdown = True
 						elif value != 0x5a: self.sim.shutdown_accept = False
 					elif value == 0x5a: self.sim.shutdown_accept = True
+				elif addr in (0x400, 0x402, 0x404, 0x405): self.sim.bcd.tick(addr)
 				else: self.sfr[addr] = value
 			elif config.hardware_id == 6:
 				if addr == 0xe: self.sfr[addr] = value == 0x5a
 				elif addr == 0x900: self.sfr[addr] = 0x34
-				elif addr == 0x901: self.sfr[addr] = value == 0
+				elif addr == 0x901: self.sfr[addr] = not value
 				else: self.sfr[addr] = value
 			elif addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: pass
 			else: self.sfr[addr] = value
 		except Exception as e: logging.error(f'{type(e).__name__} writing to {0xf000+addr:04X}H: {e}')
 		
-		if bcd and config.hardware_id == 5: self.sim.bcd.tick(addr)
 
 	def read_sfr(self, core, seg, addr):
 		if addr >= 0x1000:
@@ -813,6 +816,9 @@ class DataMem(tk.Toplevel):
 		self.title('Show data memory')
 		self.protocol('WM_DELETE_WINDOW', self.withdraw)
 
+		self.cursor_position = 0
+		self.first_nibble = None
+
 		segments = [
 		f'RAM (00:{self.sim.sim.sdata[0]:04X}H - 00:{sum(self.sim.sim.sdata) - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
@@ -820,7 +826,7 @@ class DataMem(tk.Toplevel):
 		if not config.real_hardware:
 			if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 			elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
-		elif config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
+		if config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
 		if config.hardware_id == 2 and self.sim.is_5800p: segments.append('Flash RAM (04:0000H - 04:7FFFH)')
 
 		self.segment_var = tk.StringVar(value = segments[0])
@@ -850,7 +856,7 @@ class DataMem(tk.Toplevel):
 			seg = self.segment_var.get()
 			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
 			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
-			elif seg.startswith(f'Segment {4 if config.hardware_id == 4 else 8}'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
+			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
 			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
 			else: data = '[No region selected yet.]'
 
@@ -1341,13 +1347,13 @@ class Sim:
 						self.keys_pressed.add(k)
 						if k is None: self.reset_core()
 						else:
-							if not config.real_hardware:
+							if config.real_hardware:
+								self.sim.sfr[0x14] = 2
+								if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
+							else:
 								self.stop_mode = False
 								self.write_emu_kb(1, 1 << k[0])
 								self.write_emu_kb(2, 1 << k[1])
-							else:
-								self.sim.sfr[0x14] = 2
-								if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
 					elif len(self.keys_pressed) == 0: self.curr_key = k
 					break
 
@@ -1602,25 +1608,23 @@ class Sim:
 	def set_always_update(self): self.always_update = self.always_update_tk.get()
 	def set_force_display(self): self.force_display = self.force_display_tk.get()
 
-	def read_emu_kb(self, idx):
-		if config.hardware_id == 0: return self.sim.data_mem[0x800 + idx]
+	@functools.lru_cache
+	def get_emu_kb_addr(self, idx):
+		segment = 0
+		if config.hardware_id == 0: addr = 0xe800 + idx
 		elif config.hardware_id in (4, 5):
+			segment = 4 if config.hardware_id == 4 else 8
 			if config.hardware_id == 5 and self.sample:
-				if idx == 0: return self.sim.rw_seg[0x8e07]
-				elif idx == 1: return self.sim.rw_seg[0x8e05]
-				elif idx == 2: return self.sim.rw_seg[0x8e08]
-			else: return self.sim.rw_seg[0x8e00 + idx]
-		else: return self.sim.data_mem[0xe00 + idx]
+				if idx == 0: addr = 0x8e07
+				elif idx == 1: addr = 0x8e05
+				elif idx == 2: addr = 0x8e08
+			else: addr = 0x8e00 + idx
+		else: addr = 0x8e00 + idx
+		return segment, addr
 
-	def write_emu_kb(self, idx, val):
-		if config.hardware_id == 0: self.sim.data_mem[0x800 + idx] = val & 0xff
-		elif config.hardware_id in (4, 5):
-			if config.hardware_id == 5 and self.sample:
-				if idx == 0: self.sim.rw_seg[0x8e07] = val & 0xff
-				elif idx == 1: self.sim.rw_seg[0x8e05] = val & 0xff
-				elif idx == 2: self.sim.rw_seg[0x8e08] = val & 0xff
-			else: self.sim.rw_seg[0x8e00 + idx] = val & 0xff
-		else: self.sim.data_mem[0xe00 + idx] = val & 0xff
+	def read_emu_kb(self, idx): return self.sim.read_mem_data(*self.get_emu_kb_addr(idx), 1)
+
+	def write_emu_kb(self, idx, val): self.sim.write_mem_data(*self.get_emu_kb_addr(idx), 1, val)
 
 	def run(self):
 		self.reset_core()
@@ -1761,7 +1765,10 @@ class Sim:
 		if not config.real_hardware:
 			temp = self.read_emu_kb(0)
 			if temp in (2, 8) and [self.read_emu_kb(i) for i in (1, 2)] != [1<<2, 1<<4]: self.write_emu_kb(0, 0)
-			elif temp in (5, 7): self.qr_active = True
+			elif temp in (5, 7) and not self.qr_active:
+				self.qr_active = True
+				tk.messagebox.showinfo('QR code', 'Detected emulator ROM QR code!\nGet the URL with right-click > Extra functions > QR code export > Copy URL to clipboard\n\nNote: due to the nature of the emulator, you might not see the QR code immediately')
+
 			elif temp == 6: self.qr_active = False
 
 	def sbycon(self):
@@ -1851,7 +1858,7 @@ class Sim:
 			elif ins_word == 0xfe1f or ins_word & 0xf2ff == 0xf28e:
 				if len(self.call_trace) > 0: del self.call_trace[0]
 			# BRK
-			elif ins_word == 0xffff:
+			elif ins_word == 0xffff and self.sim.core.regs.psw & 3 < 2:
 				tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
 				self.hit_brkpoint()
 
@@ -1966,7 +1973,12 @@ class Sim:
 		if url is not None: webbrowser.open_new_tab(url)
 
 	def core_step_loop(self):
-		while not self.single_step: self.core_step()
+		if profile_mode:
+			with cProfile.Profile() as pr:
+				while not self.single_step: self.core_step()
+				pr.print_stats()
+		else:
+			while not self.single_step: self.core_step()
 
 	def decode_instruction(self, csr = None, pc = None):
 		if csr is None: csr = self.sim.core.regs.csr
@@ -2353,11 +2365,12 @@ if __name__ == '__main__':
 	sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
 
 	sim_lib.core_step.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_bool, ctypes.c_int]
+	sim_lib.read_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
+	sim_lib.read_reg_er.restype = ctypes.c_uint16
 
 	sim_lib.read_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8]
 	sim_lib.read_mem_data.restype = ctypes.c_uint64
 	sim_lib.write_mem_data.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint64]
-	sim_lib.write_mem_data.restype = None
 
 	tk.Tk.report_callback_exception = report_exception
 
