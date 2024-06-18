@@ -1858,9 +1858,11 @@ class Sim:
 			elif ins_word == 0xfe1f or ins_word & 0xf2ff == 0xf28e:
 				if len(self.call_trace) > 0: del self.call_trace[0]
 			# BRK
-			elif ins_word == 0xffff and self.sim.core.regs.psw & 3 < 2:
-				tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
-				self.hit_brkpoint()
+			elif ins_word == 0xffff:
+				if self.sim.core.regs.psw & 3 < 2:
+					tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
+					self.hit_brkpoint()
+				elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
 			try: sim_lib.core_step(ctypes.pointer(self.sim.core), config.real_hardware, config.hardware_id)
 			except Exception as e: logging.error(e)
