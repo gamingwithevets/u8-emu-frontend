@@ -236,7 +236,7 @@ class Core:
 		else:
 			self.data_mem = (ctypes.c_uint8 * ramsize)()
 			self.sfr = (ctypes.c_uint8 * 0x1000)()
-			self.sfr[0x50] = pd_value
+			self.sfr[0x50] = self.c_config.pd_value
 
 			if config.hardware_id in (4, 5) and not config.real_hardware: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
 
