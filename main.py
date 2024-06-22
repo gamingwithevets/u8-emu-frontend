@@ -164,6 +164,21 @@ class u8_mem_acc_e(IntEnum):
 	U8_MACC_ARR  = 0
 	U8_MACC_FUNC = 1
 
+class c_config(ctypes.Structure):
+	_fields_ = [
+		('hwid',		ctypes.c_int),
+		('real_hw',		ctypes.c_bool),
+		('ko_mode',		ctypes.c_bool),
+		('sample',		ctypes.c_bool),
+		('is_5800p',	ctypes.c_bool),
+		('stop_accept',	(ctypes.c_bool * 2)),
+		('pd_value',	ctypes.c_uint8),
+		('rom',			ctypes.POINTER(ctypes.c_uint8)),
+		('ram',			ctypes.POINTER(ctypes.c_uint8)),
+		('sfr',			ctypes.POINTER(ctypes.c_uint8)),
+		('emu_seg',		ctypes.POINTER(ctypes.c_uint8)),
+	]
+
 ##
 # Utility Functions
 #
@@ -181,6 +196,10 @@ class Core:
 		self.sim = sim
 		ko_mode = self.sim.ko_mode
 
+		pd_value = config.pd_value if hasattr(config, 'pd_value') else 0
+		self.c_config = c_config(config.hardware_id, config.real_hardware, ko_mode, self.sim.is_5800p)
+		self.c_config.pd_value = pd_value
+
 		self.core = u8_core_t()
 		if config.hardware_id in (4, 5, 6) and config.real_hardware: self.core.u16_mode = True
 
@@ -196,15 +215,6 @@ class Core:
 				self.flash_mem = (ctypes.c_uint8 * 0x80000)(*flash)
 			else: self.flash_length = 0
 
-		rwin_sizes = {
-		0: 0xdfff,
-		2: 0x7fff,
-		3: 0x7fff,
-		4: 0xcfff,
-		5: 0x8fff,
-		6: 0xafff,
-		}
-
 		data_size = {
 		0: (0xe000, 0x1000),
 		3: (0x8000, 0xe00 if config.real_hardware else 0x7000),
@@ -213,79 +223,88 @@ class Core:
 		6: (0xb000, 0x4000),
 		}
 
-		self.sdata = data_size[config.hardware_id if config.hardware_id in data_size else 3]
+		ramstart, ramsize = data_size[config.hardware_id if config.hardware_id in data_size else 3]
 
-		self.data_mem = (ctypes.c_uint8 * self.sdata[1])()
-		self.sfr = (ctypes.c_uint8 * 0x1000)()
-		if hasattr(config, 'pd_value'): self.sfr[0x50] = config.pd_value
+		self.setup_mcu(self.code_mem, ramstart, ramsize)
 
-		if config.hardware_id in (4, 5) and not config.real_hardware: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
-
-		read_functype = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
-		write_functype = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
-
-		battery_f = read_functype(self.battery)
-		read_sfr_f = read_functype(self.read_sfr)
-		write_sfr_f = write_functype(self.write_sfr)
-
-		code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0x7FFFF if config.hardware_id == 2 and self.sim.is_5800p else 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
-		if config.hardware_id == 6:
-			for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
+	def setup_mcu(self, rom, ramstart, ramsize):
+		if os.path.exists('.env'):
+			logging.warning('This is still in beta! Please delete the .env file to use the emulator properly.')
+			sim_lib.setup_mcu(ctypes.pointer(self.c_config), ctypes.pointer(self.core), rom, ramstart, ramsize)
+			logging.info('setup_mcu ran sucessfully! Exiting now.')
+			sys.exit()
 		else:
-			if config.hardware_id == 2 and self.sim.is_5800p:
-				code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))))
-				for i in range(len(rom), 0x80000): self.code_mem[i] = 0xff
-			elif config.real_hardware and config.hardware_id != 2:
+			self.data_mem = (ctypes.c_uint8 * ramsize)()
+			self.sfr = (ctypes.c_uint8 * 0x1000)()
+			self.sfr[0x50] = pd_value
+
+			if config.hardware_id in (4, 5) and not config.real_hardware: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
+
+			read_functype = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
+			write_functype = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
+
+			battery_f = read_functype(self.battery)
+			read_sfr_f = read_functype(self.read_sfr)
+			write_sfr_f = write_functype(self.write_sfr)
+
+			code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0x7FFFF if config.hardware_id == 2 and self.sim.is_5800p else 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
+			if config.hardware_id == 6:
 				for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
+			else:
+				if config.hardware_id == 2 and self.sim.is_5800p:
+					code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))))
+					for i in range(len(rom), 0x80000): self.code_mem[i] = 0xff
+				elif config.real_hardware and config.hardware_id != 2:
+					for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
 
-		regions = [
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,       rwin_sizes[config.hardware_id],  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  self.sdata[0], sum(self.sdata) - 1,             u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.data_mem, 0x00000)))),
-			u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000, 0x0FFFF,                               u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_sfr_f, write_sfr_f))),
-		]
+			regions = [
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,  ramstart - 1,       u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  ramstart, ramstart+ramsize-1, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.data_mem, 0x00000)))),
+				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000,  0x0FFFF,            u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_sfr_f, write_sfr_f))),
+			]
 
 
-		if config.hardware_id == 4:
-			regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-			))
-			if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x40000, 0x4FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
-		elif config.hardware_id == 5:
-			regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-			))
-			if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
-			else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
+			if config.hardware_id == 4:
+				regions.extend((
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
+				))
+				if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x40000, 0x4FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
+			elif config.hardware_id == 5:
+				regions.extend((
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
+				))
+				if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
+				else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
 
-		elif config.hardware_id == 6:
-			regions.extend((
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-			))
-
-		else:
-			regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))))
-			if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
-			if config.hardware_id == 2 and self.sim.is_5800p: regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(battery_f))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x20000)))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
+			elif config.hardware_id == 6:
+				regions.extend((
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
+					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
 				))
 
-		self.core.mem.num_regions = len(regions)
-		self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
+			else:
+				regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))))
+				if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
+				if config.hardware_id == 2 and self.sim.is_5800p: regions.extend((
+						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(battery_f))),
+						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x20000)))),
+						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
+					))
 
-		self.core.codemem.num_regions = len(code_regions)
-		self.core.codemem.regions = ctypes.cast((u8_mem_reg_t * len(code_regions))(*code_regions), ctypes.POINTER(u8_mem_reg_t))
+			self.core.mem.num_regions = len(regions)
+			self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
 
-		# Initialise SP and PC
-		self.core.regs.sp = rom[0] | rom[1] << 8
-		self.core.regs.pc = rom[2] | rom[3] << 8
+			self.core.codemem.num_regions = len(code_regions)
+			self.core.codemem.regions = ctypes.cast((u8_mem_reg_t * len(code_regions))(*code_regions), ctypes.POINTER(u8_mem_reg_t))
 
-	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
+			# Initialise SP and PC
+			self.core.regs.sp = rom[0] | rom[1] << 8
+			self.core.regs.pc = rom[2] | rom[3] << 8
 	
+	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
+
 	def read_reg_er(self, n): return sim_lib.read_reg_er(ctypes.pointer(self.core), n)
 
 	# Memory Access
@@ -1568,7 +1587,6 @@ class Sim:
 
 		self.prev_csr_pc = None
 		self.prev_prev_csr_pc = None
-		self.stop_accept = self.get_var('stop_accept', ctypes.c_bool * 2)
 		self.stop_mode = False
 		self.shutdown_accept = False
 		self.shutdown = False
@@ -1773,9 +1791,9 @@ class Sim:
 
 	def sbycon(self):
 		if self.sim.sfr[9] & (1 << 1):
-			if all(self.stop_accept[:]):
+			if all(self.stop_accept):
 				self.stop_mode = True
-				self.stop_accept[:] = (ctypes.c_bool * 2)()[:]
+				self.stop_accept[0] = self.stop_accept[1] = False
 				self.sim.sfr[8] = 0
 				self.sim.sfr[0x22] = 0
 				self.sim.sfr[0x23] = 0
@@ -2322,7 +2340,7 @@ class Sim:
 @staticmethod
 def report_exception(e, exc, tb):
 	message = f'[{type(exc).__name__}] '
-	if issubclass(e, OSError):
+	if issubclass(e, OSError) and exc.strerror:
 		if os.name == 'nt':
 			if exc.winerror: errno = f'WE{exc.winerror}'
 			else: errno = exc.errno
@@ -2336,8 +2354,7 @@ def report_exception(e, exc, tb):
 	else: message += str(exc)
 
 	logging.error(message + ' (full traceback below)')
-	for l in traceback.format_exc().split('\n'):
-		if l: logging.error(l)
+	traceback.print_exc()
 
 if __name__ == '__main__':
 	if len(sys.argv) > 2:
@@ -2367,7 +2384,9 @@ if __name__ == '__main__':
 
 	sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
 
-	sim_lib.core_step.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_bool, ctypes.c_int]
+	sim_lib.setup_mcu.argtypes = [ctypes.POINTER(c_config), ctypes.POINTER(u8_core_t), ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int]
+	sim_lib.core_step.argtypes = [ctypes.POINTER(c_config), ctypes.POINTER(u8_core_t)]
+
 	sim_lib.read_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
 	sim_lib.read_reg_er.restype = ctypes.c_uint16
 
