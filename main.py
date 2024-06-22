@@ -179,20 +179,8 @@ class c_config(ctypes.Structure):
 		('ram',			ctypes.POINTER(ctypes.c_uint8)),
 		('sfr',			ctypes.POINTER(ctypes.c_uint8)),
 		('emu_seg',		ctypes.POINTER(ctypes.c_uint8)),
-		('sfr_write',	(ctypes.POINTER(ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)) * 0x1000))
+		('sfr_write',	(ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)) * 0x1000)
 	]
-
-##
-# Utility Functions
-#
-
-def uint8_ptr(array, offset):
-	vp = ctypes.cast(ctypes.pointer(array), ctypes.c_void_p).value + offset
-	return ctypes.cast(vp, ctypes.POINTER(ctypes.c_uint8))
-
-##
-# Core
-##
 
 class Core:
 	def __init__(self, sim, rom, flash):
@@ -238,7 +226,7 @@ class Core:
 		sim_lib.setup_mcu(ctypes.pointer(self.c_config), ctypes.pointer(self.core), self.code_mem, self.flash_mem if config.hardware_id == 2 and self.sim.is_5800p else None, ramstart, ramsize)
 
 		if config.hardware_id == 2 and self.sim.is_5800p: self.c_config.sfr[0x46] = 4
-		self.register_sfr(0, 1, self.write_sfr)
+		self.register_sfr(0, 0x1000, self.write_sfr)
 	
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 
@@ -250,7 +238,7 @@ class Core:
 	def write_mem_data(self, dsr, offset, size, value): return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
 	
 	def register_sfr(self, addr, length, handler = None):
-		for i in range(addr, addr+length): self.c_config.sfr_write[i].contents = self.sfr_default_write_f if handler is None else self.sfr_write_ft(handler)
+		for i in range(addr, addr+length): self.c_config.sfr_write[i] = self.sfr_default_write_f if handler is None else self.sfr_write_ft(handler)
 
 	def sfr_default_write(self, addr, value): return value
 
@@ -260,7 +248,6 @@ class Core:
 			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
 			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 		elif addr == 0:
-			print('yup')
 			self.core.regs.dsr = value
 			return value
 
@@ -806,9 +793,11 @@ class DataMem(tk.Toplevel):
 	def get_mem(self, keep_yview = True):
 		if self.wm_state() == 'normal':
 			seg = self.segment_var.get()
-			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.ramstart)
-			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.c_config.sfr), 0xf000)
-			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
+			if seg.startswith('RAM'):
+				size = 0xe00 if config.real_hardware and config.hardware_id in (2, 3) else self.sim.sim.ramsize
+				data = self.format_mem(bytes(self.sim.sim.c_config.ram[:size]), self.sim.sim.ramstart)
+			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.c_config.sfr[:0x1000]), 0xf000)
+			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.c_config.emu_seg), 0, 4 if config.hardware_id == 4 else 8)
 			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
 			else: data = '[No region selected yet.]'
 
@@ -1511,6 +1500,8 @@ class Sim:
 			self.cwii_screen_hi = [bytearray(32) for _ in range(64)]
 			self.cwii_screen_lo = [bytearray(32) for _ in range(64)]
 
+		self.curr_buffer = 0
+
 		self.single_step = True
 		self.ok = True
 		self.step = False
@@ -1579,7 +1570,7 @@ class Sim:
 
 	def run(self):
 		self.reset_core()
-		self.set_single_step(False)
+		self.set_single_step(self.single_step)
 		self.pygame_loop()
 
 		if os.name != 'nt': os.system('xset r off')

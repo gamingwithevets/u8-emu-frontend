@@ -43,7 +43,6 @@ uint8_t read_sfr(struct u8_core *core, uint8_t seg, uint16_t addr) {
 
 void write_sfr(struct u8_core *core, uint8_t seg, uint16_t addr, uint8_t val) {
 	if (confptr->sfr_write[addr]) {
-		printf("write: %04XH <- 0x%02X\n", 0xf000+addr, val);
 		confptr->sfr[addr] = confptr->sfr_write[addr](addr, val);
 	}
 }
