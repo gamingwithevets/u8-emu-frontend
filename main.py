@@ -194,10 +194,9 @@ def uint8_ptr(array, offset):
 class Core:
 	def __init__(self, sim, rom, flash):
 		self.sim = sim
-		ko_mode = self.sim.ko_mode
 
 		pd_value = config.pd_value if hasattr(config, 'pd_value') else 0
-		self.c_config = c_config(config.hardware_id, config.real_hardware, ko_mode, self.sim.is_5800p)
+		self.c_config = c_config(config.hardware_id, config.real_hardware, self.sim.ko_mode, self.sim.is_5800p)
 		self.c_config.pd_value = pd_value
 
 		self.core = u8_core_t()
@@ -286,7 +285,7 @@ class Core:
 
 			else:
 				regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))))
-				if ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
+				if self.sim.ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
 				if config.hardware_id == 2 and self.sim.is_5800p: regions.extend((
 						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(battery_f))),
 						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x20000)))),
