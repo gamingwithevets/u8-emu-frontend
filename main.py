@@ -175,6 +175,7 @@ class c_config(ctypes.Structure):
 		('stop_accept',	(ctypes.c_bool * 2)),
 		('pd_value',	ctypes.c_uint8),
 		('rom',			ctypes.POINTER(ctypes.c_uint8)),
+		('flash',		ctypes.POINTER(ctypes.c_uint8)),
 		('ram',			ctypes.POINTER(ctypes.c_uint8)),
 		('sfr',			ctypes.POINTER(ctypes.c_uint8)),
 		('emu_seg',		ctypes.POINTER(ctypes.c_uint8)),
@@ -227,6 +228,9 @@ class Core:
 		self.ramstart = ramstart
 		self.ramsize = ramsize
 
+		self.sfr_write_ft = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
+		self.sfr_default_write_f = self.sfr_write_ft(self.sfr_default_write)
+
 		self.setup_mcu(ramstart, ramsize)
 
 	def setup_mcu(self, ramstart, ramsize):
@@ -234,7 +238,7 @@ class Core:
 		sim_lib.setup_mcu(ctypes.pointer(self.c_config), ctypes.pointer(self.core), self.code_mem, self.flash_mem if config.hardware_id == 2 and self.sim.is_5800p else None, ramstart, ramsize)
 
 		if config.hardware_id == 2 and self.sim.is_5800p: self.c_config.sfr[0x46] = 4
-
+		self.register_sfr(0, 1, self.write_sfr)
 	
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 
@@ -245,55 +249,49 @@ class Core:
 	
 	def write_mem_data(self, dsr, offset, size, value): return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
 	
-	def cwii_write_screen(self, addr, val):
-		if config.real_hardware:
-			self.sfr[addr] = value
-			y, x = self.get_idx(addr - 0x800)
-			if self.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
-			else: self.sim.cwii_screen_lo[y][x] = value
-			#elif addr == 0xd1: self.sfr[addr] = 6 if self.sfr[0xd0] == 3 and self.sfr[0xd2] == 0 and value == 5 else value
+	def register_sfr(self, addr, length, handler = None):
+		for i in range(addr, addr+length): self.c_config.sfr_write[i].contents = self.sfr_default_write_f if handler is None else self.sfr_write_ft(handler)
 
+	def sfr_default_write(self, addr, value): return value
 
-	def write_sfr(self, core, seg, addr, value):
+	def write_sfr(self, addr, value):
 		if addr >= 0x1000:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
-			self.write_mem_data(seg, (0xf000 + addr) & 0xffff, 1, value)
-			return
+			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
 		elif addr == 0:
-			self.core.regs.dsr = self.sfr[0] = value
-			return
+			print('yup')
+			self.core.regs.dsr = value
+			return value
 
 		try:
 			if config.hardware_id == 5:
+				if config.real_hardware:
+					if addr >= 0x800:
+						y, x = self.get_idx(addr - 0x800)
+						if self.c_config.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
+						else: self.sim.cwii_screen_lo[y][x] = value
+						return value
+					elif addr == 0xd1: return 6 if self.c_config.sfr[0xd0] == 3 and self.c_config.sfr[0xd2] == 0 and value == 5 else value
 				if addr == 0x312:
 					if self.sim.shutdown_accept:
 						if value == 0x3c:
-							self.sfr[0x31] = 3
+							self.c_config.sfr[0x31] = 3
 							self.sim.shutdown = True
 						elif value != 0x5a: self.sim.shutdown_accept = False
 					elif value == 0x5a: self.sim.shutdown_accept = True
 				elif addr in (0x400, 0x402, 0x404, 0x405): self.sim.bcd.tick(addr)
-				else: self.sfr[addr] = value
+				else: return value
 			elif config.hardware_id == 6:
-				if addr == 0xe: self.sfr[addr] = value == 0x5a
-				elif addr == 0x900: self.sfr[addr] = 0x34
-				elif addr == 0x901: self.sfr[addr] = not value
-				else: self.sfr[addr] = value
-			elif addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: pass
-			else: self.sfr[addr] = value
-		except Exception as e: logging.error(f'{type(e).__name__} writing to {0xf000+addr:04X}H: {e}')
-		
-
-	def read_sfr(self, core, seg, addr):
-		if addr >= 0x1000:
-			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
-			logging.warning(f'Overflown read from {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
-			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
-		try:
-			if addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: return 4
-			return self.sfr[addr]
-		except Exception as e: logging.error(f'{type(e).__name__} reading from {0xf000+addr:04X}H: {e}')
+				if addr == 0xe: return value == 0x5a
+				elif addr == 0x900: return 0x34
+				elif addr == 0x901: return int(not value)
+				else: return value
+			elif addr == 0x46 and config.hardware_id == 2 and self.sim.is_5800p: return 4
+			else: return value
+		except Exception as e:
+			logging.error(f'{type(e).__name__} writing to {0xf000+addr:04X}H: {e}')
+			return 0
 
 	def battery(self, core, seg, addr): return 0xff
 
