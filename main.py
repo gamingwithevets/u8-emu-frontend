@@ -151,6 +151,7 @@ u8_core_t._fields_ = [
 		('last_write',		ctypes.c_uint32),
 		('last_write_size',	ctypes.c_uint8),
 		('u16_mode',		ctypes.c_bool),
+		('small_mm',		ctypes.c_bool),
 		('mem',				u8_mem_t),
 		('codemem',			u8_mem_t),
 	]
@@ -177,6 +178,7 @@ class c_config(ctypes.Structure):
 		('ram',			ctypes.POINTER(ctypes.c_uint8)),
 		('sfr',			ctypes.POINTER(ctypes.c_uint8)),
 		('emu_seg',		ctypes.POINTER(ctypes.c_uint8)),
+		('sfr_write',	(ctypes.POINTER(ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)) * 0x1000))
 	]
 
 ##
@@ -200,7 +202,6 @@ class Core:
 		self.c_config.pd_value = pd_value
 
 		self.core = u8_core_t()
-		if config.hardware_id in (4, 5, 6) and config.real_hardware: self.core.u16_mode = True
 
 		# Initialise memory
 		if config.hardware_id == 5 and config.real_hardware:
@@ -226,83 +227,14 @@ class Core:
 		self.ramstart = ramstart
 		self.ramsize = ramsize
 
-		self.setup_mcu(self.code_mem, ramstart, ramsize)
+		self.setup_mcu(ramstart, ramsize)
 
-	def setup_mcu(self, rom, ramstart, ramsize):
-		if os.path.exists('.env'):
-			logging.warning('This is still in beta! Please delete the .env file to use the emulator properly.')
-			sim_lib.setup_mcu(ctypes.pointer(self.c_config), ctypes.pointer(self.core), rom, ramstart, ramsize)
-			logging.info('setup_mcu ran sucessfully! Exiting now.')
-			sys.exit()
-		else:
-			self.data_mem = (ctypes.c_uint8 * ramsize)()
-			self.sfr = (ctypes.c_uint8 * 0x1000)()
-			self.sfr[0x50] = self.c_config.pd_value
+	def setup_mcu(self, ramstart, ramsize):
+		logging.warning('We have switched to a half-C configuration system, which is still in beta!\nIf you experience crashes, please revert to a previous version.')
+		sim_lib.setup_mcu(ctypes.pointer(self.c_config), ctypes.pointer(self.core), self.code_mem, self.flash_mem if config.hardware_id == 2 and self.sim.is_5800p else None, ramstart, ramsize)
 
-			if config.hardware_id in (4, 5) and not config.real_hardware: self.rw_seg = (ctypes.c_uint8 * 0x10000)()
+		if config.hardware_id == 2 and self.sim.is_5800p: self.c_config.sfr[0x46] = 4
 
-			read_functype = ctypes.CFUNCTYPE(ctypes.c_uint8, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16)
-			write_functype = ctypes.CFUNCTYPE(None, ctypes.POINTER(u8_core_t), ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint8)
-
-			battery_f = read_functype(self.battery)
-			read_sfr_f = read_functype(self.read_sfr)
-			write_sfr_f = write_functype(self.write_sfr)
-
-			code_regions = [u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x00000, 0x7FFFF if config.hardware_id == 2 and self.sim.is_5800p else 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000))))]
-			if config.hardware_id == 6:
-				for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
-			else:
-				if config.hardware_id == 2 and self.sim.is_5800p:
-					code_regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_CODE, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))))
-					for i in range(len(rom), 0x80000): self.code_mem[i] = 0xff
-				elif config.real_hardware and config.hardware_id != 2:
-					for i in range(len(rom), 0x100000): self.code_mem[i] = 0xff
-
-			regions = [
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x00000,  ramstart - 1,       u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  ramstart, ramstart+ramsize-1, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.data_mem, 0x00000)))),
-				u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x0F000,  0x0FFFF,            u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(read_sfr_f, write_sfr_f))),
-			]
-
-
-			if config.hardware_id == 4:
-				regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-				))
-				if not config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x40000, 0x4FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
-			elif config.hardware_id == 5:
-				regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x7FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x50000, 0x5FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-				))
-				if config.real_hardware: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0xFFFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
-				else: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.rw_seg, 0x00000)))))
-
-			elif config.hardware_id == 6:
-				regions.extend((
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x3FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))),
-					u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x80000, 0xAFFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))),
-				))
-
-			else:
-				regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x10000, 0x1FFFF,  u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x10000)))))
-				if self.sim.ko_mode == 0: regions.append(u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000, 0x8FFFF, u8_mem_acc_e.U8_MACC_ARR, _acc_union(_acc_arr(uint8_ptr(self.code_mem, 0x00000)))))
-				if config.hardware_id == 2 and self.sim.is_5800p: regions.extend((
-						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x100000, 0x100000,u8_mem_acc_e.U8_MACC_FUNC, _acc_union(_acc_arr(None), _acc_func(battery_f))),
-						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, True,  0x40000,  0x47FFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x20000)))),
-						u8_mem_reg_t(u8_mem_type_e.U8_REGION_DATA, False, 0x80000,  0xFFFFF, u8_mem_acc_e.U8_MACC_ARR,  _acc_union(_acc_arr(uint8_ptr(self.flash_mem, 0x00000)))),
-					))
-
-			self.core.mem.num_regions = len(regions)
-			self.core.mem.regions = ctypes.cast((u8_mem_reg_t * len(regions))(*regions), ctypes.POINTER(u8_mem_reg_t))
-
-			self.core.codemem.num_regions = len(code_regions)
-			self.core.codemem.regions = ctypes.cast((u8_mem_reg_t * len(code_regions))(*code_regions), ctypes.POINTER(u8_mem_reg_t))
-
-			# Initialise SP and PC
-			self.core.regs.sp = rom[0] | rom[1] << 8
-			self.core.regs.pc = rom[2] | rom[3] << 8
 	
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 
@@ -313,6 +245,15 @@ class Core:
 	
 	def write_mem_data(self, dsr, offset, size, value): return sim_lib.write_mem_data(ctypes.pointer(self.core), dsr, offset, size, value)
 	
+	def cwii_write_screen(self, addr, val):
+		if config.real_hardware:
+			self.sfr[addr] = value
+			y, x = self.get_idx(addr - 0x800)
+			if self.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
+			else: self.sim.cwii_screen_lo[y][x] = value
+			#elif addr == 0xd1: self.sfr[addr] = 6 if self.sfr[0xd0] == 3 and self.sfr[0xd2] == 0 and value == 5 else value
+
+
 	def write_sfr(self, core, seg, addr, value):
 		if addr >= 0x1000:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
@@ -325,13 +266,6 @@ class Core:
 
 		try:
 			if config.hardware_id == 5:
-				if config.real_hardware:
-					self.sfr[addr] = value
-					if addr >= 0x800:
-						y, x = self.get_idx(addr - 0x800)
-						if self.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
-						else: self.sim.cwii_screen_lo[y][x] = value
-					elif addr == 0xd1: self.sfr[addr] = 6 if self.sfr[0xd0] == 3 and self.sfr[0xd2] == 0 and value == 5 else value
 				if addr == 0x312:
 					if self.sim.shutdown_accept:
 						if value == 0x3c:
@@ -874,8 +808,8 @@ class DataMem(tk.Toplevel):
 	def get_mem(self, keep_yview = True):
 		if self.wm_state() == 'normal':
 			seg = self.segment_var.get()
-			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.sdata[0])
-			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.sfr), 0xf000)
+			if seg.startswith('RAM'): data = self.format_mem(bytes(self.sim.sim.data_mem)[:0xe00 if config.real_hardware and config.hardware_id in (2, 3) else len(self.sim.sim.data_mem)], self.sim.sim.ramstart)
+			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.c_config.sfr), 0xf000)
 			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.rw_seg), 0, 4 if config.hardware_id == 4 else 8)
 			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
 			else: data = '[No region selected yet.]'
@@ -1025,7 +959,7 @@ EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
 Other information:
-STOP acceptor            1 [{'x' if self.sim.sim.c_config.stop_accept[0] else ' '}]  2 [{'x' if self.sim.c_config.stop_accept[1] else ' '}]
+STOP acceptor            1 [{'x' if self.sim.sim.c_config.stop_accept[0] else ' '}]  2 [{'x' if self.sim.sim.c_config.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Shutdown acceptor        [{'x' if self.sim.shutdown_accept else ' '}]
 Shutdown state           [{'x' if self.sim.shutdown else ' '}]
@@ -1181,8 +1115,8 @@ class WDT:
 		if self.counter == 0: self.wdt_loop()
 
 	def wdt_loop(self):
-		self.sim.sim.sfr[0x18] |= 1
-		self.mode = self.sim.sim.sfr[0xf] & 3
+		self.sim.sim.c_config.sfr[0x18] |= 1
+		self.mode = self.sim.sim.c_config.sfr[0xf] & 3
 		self.counter = self.ms[self.mode]
 
 class Sim:
@@ -1368,8 +1302,8 @@ class Sim:
 						if k is None: self.reset_core()
 						else:
 							if config.real_hardware:
-								self.sim.sfr[0x14] = 2
-								if self.sim.sfr[0x42] & (1 << k[0]): self.stop_mode = False
+								self.sim.c_config.sfr[0x14] = 2
+								if self.sim.c_config.sfr[0x42] & (1 << k[0]): self.stop_mode = False
 							else:
 								self.stop_mode = False
 								self.write_emu_kb(1, 1 << k[0])
@@ -1771,7 +1705,7 @@ class Sim:
 	def keyboard(self):
 		ki = 0xff
 		if len(self.keys_pressed) > 0:
-			ko = self.sim.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.sfr[0x46]
+			ko = self.sim.c_config.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.c_config.sfr[0x46]
 
 			try:
 				for val in self.keys_pressed:
@@ -1779,7 +1713,7 @@ class Sim:
 					if ko & (1 << val[1]): ki &= ~(1 << val[0])
 			except RuntimeError: pass
 
-		self.sim.sfr[0x40] = ki
+		self.sim.c_config.sfr[0x40] = ki
 
 		if not config.real_hardware:
 			temp = self.read_emu_kb(0)
@@ -1791,14 +1725,14 @@ class Sim:
 			elif temp == 6: self.qr_active = False
 
 	def sbycon(self):
-		if self.sim.sfr[9] & (1 << 1):
+		if self.sim.c_config.sfr[9] & (1 << 1):
 			if all(self.sim.c_config.stop_accept):
 				self.stop_mode = True
 				self.sim.c_config.stop_accept[0] = self.sim.c_config.stop_accept[1] = False
-				self.sim.sfr[8] = 0
-				self.sim.sfr[0x22] = 0
-				self.sim.sfr[0x23] = 0
-			else: self.sim.sfr[9] &= ~(1 << 1)
+				self.sim.c_config.sfr[8] = 0
+				self.sim.c_config.sfr[0x22] = 0
+				self.sim.c_config.sfr[0x23] = 0
+			else: self.sim.c_config.sfr[9] &= ~(1 << 1)
 
 	def timer(self):
 		now = time.time_ns()
@@ -1814,19 +1748,19 @@ class Sim:
 		self.timer_tick(ticks)
 
 	def timer_tick(self, tick):
-		if self.sim.sfr[0x25] & 1:
-			counter = (self.sim.sfr[0x23] << 8) + self.sim.sfr[0x22]
-			target = (self.sim.sfr[0x21] << 8) + self.sim.sfr[0x20]
+		if self.sim.c_config.sfr[0x25] & 1:
+			counter = (self.sim.c_config.sfr[0x23] << 8) + self.sim.c_config.sfr[0x22]
+			target = (self.sim.c_config.sfr[0x21] << 8) + self.sim.c_config.sfr[0x20]
 
 			counter = (counter + tick) & 0xffff
 
-			self.sim.sfr[0x22] = counter & 0xff
-			self.sim.sfr[0x23] = counter >> 8
+			self.sim.c_config.sfr[0x22] = counter & 0xff
+			self.sim.c_config.sfr[0x23] = counter >> 8
 
 			if counter >= target and self.stop_mode:
 				self.stop_mode = False
-				self.sim.sfr[9] &= ~(1 << 1)
-				self.sim.sfr[0x14] = 0x20
+				self.sim.c_config.sfr[9] &= ~(1 << 1)
+				self.sim.c_config.sfr[0x14] = 0x20
 				if not config.real_hardware:
 					self.write_emu_kb(1, 0)
 					self.write_emu_kb(2, 0)
@@ -1836,14 +1770,14 @@ class Sim:
 
 	def check_ints(self):
 		rang = (0x14, 0x16) if config.hardware_id != 6 else (0x18, 0x20)
-		if any(v != 0 for v in self.sim.sfr[rang[0]:rang[1]]):
+		if any(v != 0 for v in self.sim.c_config.sfr[rang[0]:rang[1]]):
 			for i in range(*rang):
-				if self.sim.sfr[i] == 0: continue
-				self.raise_int(i, self.find_bit(self.sim.sfr[i]))
+				if self.sim.c_config.sfr[i] == 0: continue
+				self.raise_int(i, self.find_bit(self.sim.c_config.sfr[i]))
 
 	def raise_int(self, irq, bit):
 		intdata = self.int_table[(irq, bit)]
-		if intdata[1] is not None and intdata[2] is not None: cond = self.sim.sfr[intdata[1]] & (1 << intdata[2])
+		if intdata[1] is not None and intdata[2] is not None: cond = self.sim.c_config.sfr[intdata[1]] & (1 << intdata[2])
 		else: cond = True
 
 		elevel = 2 if intdata[0] == 8 else 1
@@ -1851,7 +1785,7 @@ class Sim:
 		if cond and (self.sim.core.regs.psw & 3 >= elevel or elevel == 2) and mie:
 			#logging.info(f'{intdata[3]} interrupt raised {"@ "+self.get_addr_label(self.sim.core.regs.csr, self.sim.core.regs.pc) if intdata[3] != "WDTINT" else ""}')
 			self.stop_mode = False
-			self.sim.sfr[irq] &= ~(1 << bit)
+			self.sim.c_config.sfr[irq] &= ~(1 << bit)
 			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
 			self.sim.core.regs.ecsr[elevel-1] = self.sim.core.regs.csr
 			self.sim.core.regs.epsw[elevel-1] = self.sim.core.regs.psw
@@ -1884,7 +1818,7 @@ class Sim:
 				elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
 			try: sim_lib.core_step(ctypes.pointer(self.sim.c_config), ctypes.pointer(self.sim.core))
-			except Exception as e: logging.error(e)
+			except Exception as e: logging.error(f'{e} @ {self.get_addr_label(self.sim.core.regs.csr, self.sim.core.regs.pc-2)}')
 
 			if self.prev_csr_pc is not None: self.prev_prev_csr_pc = self.prev_csr_pc
 			if prev_csr_pc != self.prev_csr_pc: self.prev_csr_pc = prev_csr_pc
@@ -1945,6 +1879,7 @@ class Sim:
 			self.keys_pressed.clear()
 
 	def update_displays(self):
+		self.screen_changed = True
 		self.reg_display.print_regs()
 		self.call_display.print_regs()
 		self.debugger.update()
@@ -2220,17 +2155,17 @@ class Sim:
 		self.sim.u8_reset()
 		if config.hardware_id == 6:
 			self.scr[3][0] = self.scr[3][1] = None
-			for i in range(0x1000): self.sim.sfr[i] = 0xff
-			self.sim.sfr[2] = 0x13
-			self.sim.sfr[3] = 3
-			self.sim.sfr[4] = 2
-			self.sim.sfr[5] = 0x40
-			self.sim.sfr[0xa] = 3
-			self.sim.sfr[0xe] = 0
-			self.sim.sfr[0xf] = 0x82
-			self.sim.sfr[0x900] = 6
-			self.sim.sfr[1] = 0x30
-			for i in range(0x10, 0x4f): self.sim.sfr[i] = 0
+			for i in range(0x1000): self.sim.c_config.sfr[i] = 0xff
+			self.sim.c_config.sfr[2] = 0x13
+			self.sim.c_config.sfr[3] = 3
+			self.sim.c_config.sfr[4] = 2
+			self.sim.c_config.sfr[5] = 0x40
+			self.sim.c_config.sfr[0xa] = 3
+			self.sim.c_config.sfr[0xe] = 0
+			self.sim.c_config.sfr[0xf] = 0x82
+			self.sim.c_config.sfr[0x900] = 6
+			self.sim.c_config.sfr[1] = 0x30
+			for i in range(0x10, 0x4f): self.sim.c_config.sfr[i] = 0
 		elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
 		self.call_trace = []
@@ -2282,8 +2217,8 @@ class Sim:
 				screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
 			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
 			
-			scr_range = 0 if self.force_display else self.sim.sfr[0x30] & 7
-			scr_mode = 5 if self.force_display else self.sim.sfr[0x31] & 7
+			scr_range = 0 if self.force_display else self.sim.c_config.sfr[0x30] & 7
+			scr_mode = 5 if self.force_display else self.sim.c_config.sfr[0x31] & 7
 
 			if (not disp_lcd and scr_mode in (5, 6)) or disp_lcd:
 				if self.status_bar is not None and hasattr(config, 'status_bar_crops') and 'screen_data_status_bar' in locals():
@@ -2385,7 +2320,7 @@ if __name__ == '__main__':
 
 	sim_lib.u8_step.argtypes = [ctypes.POINTER(u8_core_t)]
 
-	sim_lib.setup_mcu.argtypes = [ctypes.POINTER(c_config), ctypes.POINTER(u8_core_t), ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int]
+	sim_lib.setup_mcu.argtypes = [ctypes.POINTER(c_config), ctypes.POINTER(u8_core_t), ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int]
 	sim_lib.core_step.argtypes = [ctypes.POINTER(c_config), ctypes.POINTER(u8_core_t)]
 
 	sim_lib.read_reg_er.argtypes = [ctypes.POINTER(u8_core_t), ctypes.c_uint8]
