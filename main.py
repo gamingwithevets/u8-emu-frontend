@@ -223,6 +223,8 @@ class Core:
 		}
 
 		ramstart, ramsize = data_size[config.hardware_id if config.hardware_id in data_size else 3]
+		self.ramstart = ramstart
+		self.ramsize = ramsize
 
 		self.setup_mcu(self.code_mem, ramstart, ramsize)
 
@@ -838,7 +840,7 @@ class DataMem(tk.Toplevel):
 		self.first_nibble = None
 
 		segments = [
-		f'RAM (00:{self.sim.sim.sdata[0]:04X}H - 00:{sum(self.sim.sim.sdata) - 1:04X}H)',
+		f'RAM (00:{self.sim.sim.ramstart:04X}H - 00:{self.sim.sim.ramstart + self.sim.sim.ramsize - 1:04X}H)',
 		'SFRs (00:F000H - 00:FFFFH)',
 		]
 		if not config.real_hardware:
@@ -1023,7 +1025,7 @@ EPSW2           {regs.epsw[1]:02X}
 EPSW3           {regs.epsw[2]:02X}
 
 Other information:
-STOP acceptor            1 [{'x' if self.sim.stop_accept[:][0] else ' '}]  2 [{'x' if self.sim.stop_accept[:][1] else ' '}]
+STOP acceptor            1 [{'x' if self.sim.sim.c_config.stop_accept[0] else ' '}]  2 [{'x' if self.sim.c_config.stop_accept[1] else ' '}]
 STOP mode                [{'x' if self.sim.stop_mode else ' '}]
 Shutdown acceptor        [{'x' if self.sim.shutdown_accept else ' '}]
 Shutdown state           [{'x' if self.sim.shutdown else ' '}]
@@ -1790,9 +1792,9 @@ class Sim:
 
 	def sbycon(self):
 		if self.sim.sfr[9] & (1 << 1):
-			if all(self.stop_accept):
+			if all(self.sim.c_config.stop_accept):
 				self.stop_mode = True
-				self.stop_accept[0] = self.stop_accept[1] = False
+				self.sim.c_config.stop_accept[0] = self.sim.c_config.stop_accept[1] = False
 				self.sim.sfr[8] = 0
 				self.sim.sfr[0x22] = 0
 				self.sim.sfr[0x23] = 0
@@ -1881,7 +1883,7 @@ class Sim:
 					self.hit_brkpoint()
 				elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
-			try: sim_lib.core_step(ctypes.pointer(self.sim.core), config.real_hardware, config.hardware_id)
+			try: sim_lib.core_step(ctypes.pointer(self.sim.c_config), ctypes.pointer(self.sim.core))
 			except Exception as e: logging.error(e)
 
 			if self.prev_csr_pc is not None: self.prev_prev_csr_pc = self.prev_csr_pc
