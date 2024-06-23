@@ -42,12 +42,10 @@ from pyu8disas.labeltool import labeltool
 from tool8 import tool8
 import platform
 
-profile_mode = False
+import peripheral
+import gui
 
-try:
-	from bcd import BCD
-	bcd = True
-except ImportError: bcd = False
+profile_mode = False
 
 if sys.version_info < (3, 8, 0):
 	print(f'This program requires at least Python 3.8.0. (You are running Python {platform.python_version()})')
@@ -172,7 +170,6 @@ class c_config(ctypes.Structure):
 		('ko_mode',		ctypes.c_bool),
 		('sample',		ctypes.c_bool),
 		('is_5800p',	ctypes.c_bool),
-		('stop_accept',	(ctypes.c_bool * 2)),
 		('pd_value',	ctypes.c_uint8),
 		('rom',			ctypes.POINTER(ctypes.c_uint8)),
 		('flash',		ctypes.POINTER(ctypes.c_uint8)),
@@ -222,11 +219,10 @@ class Core:
 		self.setup_mcu(ramstart, ramsize)
 
 	def setup_mcu(self, ramstart, ramsize):
-		logging.warning('We have switched to a half-C configuration system, which is still in beta!\nIf you experience crashes, please revert to a previous version.')
 		sim_lib.setup_mcu(ctypes.pointer(self.c_config), ctypes.pointer(self.core), self.code_mem, self.flash_mem if config.hardware_id == 2 and self.sim.is_5800p else None, ramstart, ramsize)
 
 		if config.hardware_id == 2 and self.sim.is_5800p: self.c_config.sfr[0x46] = 4
-		self.register_sfr(0, 0x1000, self.write_sfr)
+		self.register_sfr(0, 1, self.write_dsr)
 	
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 
@@ -242,14 +238,15 @@ class Core:
 
 	def sfr_default_write(self, addr, value): return value
 
+	def write_dsr(self, addr, value):
+		self.core.regs.dsr = value
+		return value
+
 	def write_sfr(self, addr, value):
 		if addr >= 0x1000:
 			label = self.sim.get_instruction_label((self.core.regs.csr << 16) + self.core.regs.pc)
 			logging.warning(f'Overflown write to {(0xf000 + addr) & 0xffff:04X}H @ {self.sim.get_addr_label(self.core.regs.csr, self.core.regs.pc-2)}')
 			return self.read_mem_data(seg, (0xf000 + addr) & 0xffff, 1)
-		elif addr == 0:
-			self.core.regs.dsr = value
-			return value
 
 		try:
 			if config.hardware_id == 5:
@@ -490,622 +487,6 @@ class Debounce():
 
 class DebounceTk(Debounce, tk.Tk): pass
 
-# https://stackoverflow.com/a/16198198
-class VerticalScrolledFrame(tk.Frame):
-	def __init__(self, parent, *args, **kw):
-		tk.Frame.__init__(self, parent, *args, **kw)
-
-		vscrollbar = tk.Scrollbar(self, orient = 'vertical')
-		vscrollbar.pack(fill = 'y', side = 'right')
-		canvas = tk.Canvas(self, bd = 0, highlightthickness = 0, yscrollcommand = vscrollbar.set)
-		canvas.pack(side = 'left', fill = 'both', expand = True)
-		vscrollbar.config(command = canvas.yview)
-
-		canvas.xview_moveto(0)
-		canvas.yview_moveto(0)
-
-		self.interior = interior = tk.Frame(canvas)
-		interior_id = canvas.create_window(0, 0, window = interior, anchor = 'nw')
-
-		def _configure_interior(event):
-			size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
-			canvas.config(scrollregion = '0 0 %s %s' % size)
-			if interior.winfo_reqwidth() != canvas.winfo_width():
-				canvas.config(width=interior.winfo_reqwidth())
-		interior.bind('<Configure>', _configure_interior)
-
-		def _configure_canvas(event):
-			if interior.winfo_reqwidth() != canvas.winfo_width():
-				canvas.itemconfigure(interior_id, width=canvas.winfo_width())
-		canvas.bind('<Configure>', _configure_canvas)
-
-class BrkpointFrame(tk.Frame):
-	sizenames = {2: "", 4: "D", 8: "Q"}
-
-	def __init__(self, master, gui, index, **kw):
-		tk.Frame.__init__(self, master, **kw)
-		self.gui = gui
-		self.index = index
-
-		self.show_exec_labels = len(self.gui.sim.labels) != 0
-		self.show_data_labels = len(self.gui.sim.disas.data_labels) != 0
-
-		if self.show_exec_labels: self.labels = self.gui.sim.labels
-		if self.show_data_labels: self.data_labels = self.gui.sim.disas.data_labels
-
-		self.type = tk.IntVar()
-
-		ttk.Button(self, text = 'X', width = 2, command = self.destroy).pack(side = 'right')
-		ttk.Label(self, text = '   ').pack(side = 'right')
-		ttk.Radiobutton(self, text = 'Execute', variable = self.type, value = 0, command = self.change_type).pack(side = 'right')
-		ttk.Radiobutton(self, text = 'Write', variable = self.type, value = 2, command = self.change_type).pack(side = 'right')
-		ttk.Radiobutton(self, text = 'Read', variable = self.type, value = 1, command = self.change_type).pack(side = 'right')
-
-		self.enabled = tk.BooleanVar(value = True)
-		ttk.Checkbutton(self, text = ' ', variable = self.enabled, command = self.set_enable).pack(side = 'left')
-
-		self.vcmd = self.register(self.gui.sim.validate_hex)
-
-		self.csr = ttk.Entry(self, width = 3, justify = 'left', validate = 'key', validatecommand = (self.vcmd, '%S', '%P', '%d', range(0x10)))
-		self.csr.bind('<KeyPress>', self.cap_input)
-		self.csr.pack(side = 'left')
-
-		ttk.Label(self, text = ':').pack(side = 'left')
-
-		self.pc = ttk.Entry(self, width = 6, justify = 'left', validate = 'key', validatecommand = (self.vcmd, '%S', '%P', '%d', range(0, 0x10000, 2)))
-		self.pc.bind('<KeyPress>', self.cap_input)
-		self.pc.pack(side = 'left')
-
-		ttk.Label(self, text = 'H   ').pack(side = 'left')
-
-		self.label = tk.StringVar()
-		self.labelselect = ttk.Combobox(self, width = 27, textvariable = self.label)
-		if self.show_exec_labels:
-			self.labelselect['values'] = [f'{k >> 16:X}:{k & 0xfffe:04X}H - {("" if v[1] else self.labels[v[2]][0]) + v[0]}' for k, v in self.labels.items()]
-			self.labelselect.pack(side = 'left')
-
-		self.bind('<FocusOut>', self.focusout)
-
-	def change_type(self):
-		self.gui.sim.brkpoints[self.index]['type'] = self.type.get()
-		self.labelselect.pack_forget()
-
-		if self.type.get() == 0:
-			value = int(self.pc.get(), 16) & 0xfffe
-			self.pc.delete(0, 'end')
-			self.pc.insert(0, f'{value:04X}')
-			self.pc['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0, 0x10000, 2))
-
-			value = int(self.csr.get(), 16) & 0xf
-			self.csr.delete(0, 'end')
-			self.csr.insert(0, f'{value:X}')
-			self.csr['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x10))
-
-			if self.show_exec_labels:
-				self.label = ''
-				self.labelselect['values'] = [f'{k >> 16:X}:{k & 0xfffe:04X}H - {("" if v[1] else self.labels[v[2]][0]) + v[0]}' for k, v in self.labels.items()]
-				self.labelselect.pack(side = 'left')
-		else:
-			self.csr['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x100))
-			self.pc['validatecommand'] = (self.vcmd, '%S', '%P', '%d', range(0x10000))
-
-			if self.show_data_labels:
-				self.label = ''
-				self.labelselect['values'] = [f'{k >> 16}:{k & 0xfffe}H - {v}' for k, v in self.data_labels.items()]
-				self.labelselect.pack(side = 'left')
-
-	def cap_input(self, event):
-		if event.char.lower() in '0123456789abcdef':
-			event.widget.insert('end', event.char.upper())
-			return 'break'
-
-	def focusout(self, event = None):
-		self.pc.insert(0, '0'*(4-len(self.pc.get())))
-		self.csr.insert(0, '0'*(1+(self.type.get() != 0)-len(self.csr.get())))
-
-		self.change_type()
-
-		self.gui.sim.brkpoints[self.index]['addr'] = (int(self.csr.get(), 16) << 16) + int(self.pc.get(), 16)
-
-	def set_enable(self): self.gui.sim.brkpoints[self.index]['enabled'] = self.enabled.get()
-
-	def destroy(self):
-		del self.gui.sim.brkpoints[self.index]
-		if len(self.gui.sim.brkpoints) == 0: self.gui.clearbutton['state'] = 'disabled'
-		super().destroy()
-
-class Jump(tk.Toplevel):
-	def __init__(self, sim):
-		super(Jump, self).__init__()
-		self.sim = sim
-
-		self.withdraw()
-		self.geometry('250x120')
-		self.resizable(False, False)
-		self.title('Jump to address')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = 'Input new values for CSR and PC.\nStop mode will be disabled after jumping.\n(please input hex bytes)', justify = 'center').pack()
-		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
-		ttk.Label(self.csr, text = 'CSR').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10))); self.csr_entry.pack(side = 'right')
-		self.csr_entry.insert(0, '0')
-		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
-		ttk.Label(self.pc, text = 'PC').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0, 0xfffe, 2))); self.pc_entry.pack(side = 'right')
-		ttk.Button(self, text = 'OK', command = self.set_csr_pc).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: self.set_csr_pc())
-		self.bind('<Escape>', lambda x: self.withdraw())
-
-	def set_csr_pc(self):
-		csr_entry = self.csr_entry.get()
-		pc_entry = self.pc_entry.get()
-		if csr_entry == '' or pc_entry == '': return
-
-		self.sim.sim.core.regs.csr = int(csr_entry, 16) if csr_entry else 0
-		self.sim.sim.core.regs.pc = int(pc_entry, 16) if pc_entry else 0
-		self.sim.stop_mode = False
-		self.sim.update_displays()
-		self.withdraw()
-
-		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
-		self.pc_entry.delete(0, 'end')
-
-class Brkpoint(tk.Toplevel):
-	def __init__(self, sim):
-		super(Brkpoint, self).__init__()
-		self.sim = sim
-
-		self.withdraw()
-		self.geometry('800x600')
-		self.resizable(False, False)
-		self.title('Breakpoint manager')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = 'Breakpoint list\n').pack()
-
-		buttonframe = tk.Frame(self)
-		addbtn = ttk.Button(buttonframe, text = 'Add breakpoint', command = self.add)
-		addbtn.pack(side = 'left')
-
-		self.clearbutton = ttk.Button(buttonframe, text = 'Delete all', command = self.clear_all, state = 'disabled'); self.clearbutton.pack(side = 'left')
-		buttonframe.pack()
-
-		self.brkpointframe = VerticalScrolledFrame(self)
-		self.brkpointframe.pack(fill = 'both', expand = True)
-
-	def add(self):
-		idx = max(self.sim.brkpoints) + 1 if len(self.sim.brkpoints) > 0 else 0
-		if len(self.sim.brkpoints) == 0: self.clearbutton['state'] = 'normal'
-
-		widget = BrkpointFrame(self.brkpointframe.interior, self, idx)
-		self.sim.brkpoints[idx] = {'enabled': True, 'type': 0, 'addr': None, 'widget': widget}
-		widget.pack(fill = 'x')
-
-	def clear_all(self, confirm = True):
-		if confirm and not tk.messagebox.askyesno('Warning', 'Are you sure you want to delete all breakpoints?', icon = 'warning'): return
-		for j in [i['widget'] for i in self.sim.brkpoints.values()]: j.destroy()
-
-class Write(tk.Toplevel):
-	def __init__(self, sim):
-		super(Write, self).__init__()
-		self.sim = sim
-		
-		tk_font = tk.font.nametofont('TkDefaultFont')
-		bold_italic_font = tk_font.copy()
-		bold_italic_font.config(weight = 'bold', slant = 'italic')
-
-		self.withdraw()
-		self.geometry('375x125')
-		self.resizable(False, False)
-		self.title('Write to data memory')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self.vh_reg = self.register(self.sim.validate_hex)
-		ttk.Label(self, text = '(please input hex bytes)', justify = 'center').pack()
-		self.csr = tk.Frame(self); self.csr.pack(fill = 'x')
-		ttk.Label(self.csr, text = 'Segment').pack(side = 'left')
-		self.csr_entry = ttk.Entry(self.csr, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.csr_entry.pack(side = 'right')
-		self.csr_entry.insert(0, '0')
-		self.pc = tk.Frame(self); self.pc.pack(fill = 'x')
-		ttk.Label(self.pc, text = 'Address').pack(side = 'left')
-		self.pc_entry = ttk.Entry(self.pc, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x10000))); self.pc_entry.pack(side = 'right')
-		self.byte = tk.Frame(self); self.byte.pack(fill = 'x')
-		ttk.Label(self.byte, text = 'Hex data').pack(side = 'left')
-		self.byte_entry = ttk.Entry(self.byte, validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', None, 1)); self.byte_entry.pack(side = 'right')
-		ttk.Button(self, text = 'OK', command = self.write).pack(side = 'bottom')
-		self.bind('<Return>', lambda x: self.write())
-		self.bind('<Escape>', lambda x: self.withdraw())
-
-	def write(self):
-		seg = self.csr_entry.get(); seg = int(seg, 16) if seg else 0
-		adr = self.pc_entry.get(); adr = int(adr, 16) if adr else 0
-		byte = self.byte_entry.get()
-		if seg == '' or adr == '' or byte == '': return
-		try: byte = bytes.fromhex(byte) if byte else '\x00'
-		except Exception:
-			try: byte = byte = bytes.fromhex('0' + byte) if byte else '\x00'
-			except Exception:
-				tk.messagebox.showerror('Error', 'Invalid hex string!')
-				return
-		
-		index = 0
-		while index < len(byte):
-			remaining = len(byte) - index
-			if remaining > 8: num = 8
-			else: num = remaining
-			self.sim.write_dmem(adr + index, num, int.from_bytes(byte[index:index+num], 'little'), seg)
-			index += num
-
-		self.sim.update_displays()
-		self.sim.data_mem.get_mem()
-		self.withdraw()
-
-		self.csr_entry.delete(0, 'end'); self.csr_entry.insert(0, '0')
-		self.pc_entry.delete(0, 'end')
-		self.byte_entry.delete(0, 'end'); self.byte_entry.insert(0, '0')
-
-class DataMem(tk.Toplevel):
-	def __init__(self, sim):
-		super(DataMem, self).__init__()
-		self.sim = sim
-
-		self.withdraw()
-		self.geometry(f'{config.data_mem_width}x{config.data_mem_height}')
-		self.resizable(False, False)
-		self.title('Show data memory')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-
-		self.cursor_position = 0
-		self.first_nibble = None
-
-		segments = [
-		f'RAM (00:{self.sim.sim.ramstart:04X}H - 00:{self.sim.sim.ramstart + self.sim.sim.ramsize - 1:04X}H)',
-		'SFRs (00:F000H - 00:FFFFH)',
-		]
-		if not config.real_hardware:
-			if config.hardware_id == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
-			elif config.hardware_id == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
-		if config.hardware_id in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if config.real_hardware else "EFFF"}H)'
-		if config.hardware_id == 2 and self.sim.is_5800p: segments.append('Flash RAM (04:0000H - 04:7FFFH)')
-
-		self.segment_var = tk.StringVar(value = segments[0])
-		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments, state = 'readonly')
-		self.segment_cb.bind('<<ComboboxSelected>>', lambda x: self.get_mem(False))
-		self.segment_cb.pack()
-
-		ttk.Label(self, text = 'Address  ' + ' '.join([f'{i:02X}' for i in range(16)]) + '   ASCII text', justify = 'left', font = config.data_mem_font).pack(fill = 'x')
-		self.code_frame = ttk.Frame(self)
-		self.code_text_sb = ttk.Scrollbar(self.code_frame)
-		self.code_text_sb.pack(side = 'right', fill = 'y')
-		self.code_text = tk.Text(self.code_frame, font = config.data_mem_font, yscrollcommand = self.code_text_sb.set, wrap = 'none', state = 'disabled')
-		self.code_text_sb.config(command = self.sb_yview)
-		self.code_text.pack(fill = 'both', expand = True)
-		self.code_frame.pack(fill = 'both', expand = True)
-
-	def sb_yview(self, *args):
-		self.code_text.yview(*args)
-		self.get_mem()
-
-	def open(self):
-		self.deiconify()
-		self.get_mem()
-
-	def get_mem(self, keep_yview = True):
-		if self.wm_state() == 'normal':
-			seg = self.segment_var.get()
-			if seg.startswith('RAM'):
-				size = 0xe00 if config.real_hardware and config.hardware_id in (2, 3) else self.sim.sim.ramsize
-				data = self.format_mem(bytes(self.sim.sim.c_config.ram[:size]), self.sim.sim.ramstart)
-			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.c_config.sfr[:0x1000]), 0xf000)
-			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.c_config.emu_seg), 0, 4 if config.hardware_id == 4 else 8)
-			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
-			else: data = '[No region selected yet.]'
-
-			self.code_text['state'] = 'normal'
-			yview_bak = self.code_text.yview()[0]
-			self.code_text.delete('1.0', 'end')
-			self.code_text.insert('end', data)
-			if keep_yview: self.code_text.yview_moveto(str(yview_bak))
-			self.code_text['state'] = 'disabled'
-
-	@staticmethod
-	@functools.lru_cache
-	def format_mem(data, addr, seg = 0):
-		lines = {}
-		j = addr // 16
-		for i in range(addr, addr + len(data), 16):
-			line = ''
-			line_ascii = ''
-			for byte in data[i-addr:i-addr+16]: line += f'{byte:02X} '; line_ascii += chr(byte) if byte in range(0x20, 0x7f) else '.'
-			lines[j] = f'{seg:02}:{i % 0x10000:04X}H {line}  {line_ascii}'
-			j += 1
-		return '\n'.join(lines.values())
-
-class GPModify(tk.Toplevel):
-	def __init__(self, sim):
-		super(GPModify, self).__init__()
-		self.sim = sim
-		
-		self.withdraw()
-		self.geometry('300x100')
-		self.resizable(False, False)
-		self.title('Modify general registers')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self.vh_reg = self.register(self.sim.validate_hex)
-
-		regs = [str(i) for i in range(16)]
-
-		ttk.Label(self, text = '(please input hex bytes)').pack()
-		modify_frame = tk.Frame(self)
-		ttk.Label(modify_frame, text = 'Change R').pack(side = 'left')
-		ttk.Label(modify_frame, text = ' to:').pack(side = 'right')
-		self.reg_var = tk.StringVar(value = '0')
-		self.reg_var = ttk.Combobox(modify_frame, width = 2, textvariable = self.reg_var, values = regs)
-		self.reg_var.bind('<<ComboboxSelected>>', lambda x: self.update_reg())
-		self.reg_var.pack()
-		modify_frame.pack()
-
-		byte_frame = tk.Frame(self)
-		ttk.Label(byte_frame, text = '#').pack(side = 'left')
-		ttk.Label(byte_frame, text = 'H').pack(side = 'right')
-		self.byte_entry = ttk.Entry(byte_frame, width = '3', justify = 'center', validate = 'key', validatecommand = (self.vh_reg, '%S', '%P', '%d', range(0x100))); self.byte_entry.pack()
-		byte_frame.pack()
-
-		ttk.Button(self, text = 'OK', command = self.modify).pack(side = 'bottom')
-
-		self.bind('<Return>', lambda x: self.modify())
-		self.bind('<Escape>', lambda x: self.withdraw())
-
-	def open(self):
-		if self.reg_var.get() == '': self.reg_var.set('0')
-		self.update_reg()
-		self.deiconify()
-
-	def update_reg(self):
-		self.byte_entry.delete(0, 'end')
-		self.byte_entry.insert(0, f'{self.sim.sim.core.regs.gp[int(self.reg_var.get())]:02X}')
-
-	def modify(self):
-		self.withdraw()
-		self.sim.sim.core.regs.gp[int(self.reg_var.get())] = int(self.byte_entry.get(), 16)
-		self.sim.update_displays()
-
-		self.reg_var.set('0')
-
-class RegDisplay(tk.Toplevel):
-	def __init__(self, sim):
-		super(RegDisplay, self).__init__()
-		self.sim = sim
-		
-		self.withdraw()
-		self.geometry('400x800')
-		self.title('Register display')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self.bind('\\', lambda x: self.sim.set_step())
-		self.sim.bind_(self, 's', lambda x: self.sim.set_single_step(True))
-		self.sim.bind_(self, 'p', lambda x: self.sim.set_single_step(False))
-		self['bg'] = config.console_bg
-
-		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
-		self.info_label.pack(side = 'left', fill = 'both')
-
-	@staticmethod
-	@functools.lru_cache
-	def fmt_x(val): return 'x' if int(val) else ' '
-
-	def open(self):
-		self.deiconify()
-		self.print_regs()
-
-	def print_regs(self):
-		try: wm_state = self.wm_state()
-		except Exception: return
-
-		regs = self.sim.sim.core.regs
-		last_swi = self.sim.sim.core.last_swi
-		ins, ins_len = self.sim.decode_instruction()
-
-		csr = regs.csr
-		pc = regs.pc
-		sp = regs.sp
-		psw = regs.psw
-		psw_f = format(psw, '08b')
-		label = self.sim.get_instruction_label((csr << 16) + pc)
-		nl = '\n'
-
-		if wm_state == 'normal': self.info_label['text'] = f'''\
-=== REGISTERS ===
-
-General registers:
-R0   R1   R2   R3   R4   R5   R6   R7
-''' + '   '.join(f'{regs.gp[i]:02X}' for i in range(8)) + f'''
- 
-R8   R9   R10  R11  R12  R13  R14  R15
-''' + '   '.join(f'{regs.gp[8+i]:02X}' for i in range(8)) + f'''
-
-Control registers:
-CSR:PC          {self.sim.get_addr_label(csr, pc)}
-Previous CSR:PC {self.sim.prev_csr_pc} -- Prev. Prev.: {self.sim.prev_prev_csr_pc}
-Opcode          ''' + ''.join(format(self.sim.read_cmem((pc + i*2) & 0xfffe, csr), '04X') for i in range(ins_len // 2)) + f'''
-Instruction     {ins}
-SP              {sp:04X}H
-Words @ SP      ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(0, 8, 2)) + f'''
-                ''' + ' '.join(format(self.sim.read_dmem(sp + i, 2), '04X') for i in range(8, 16, 2)) + f'''
-DSR:EA          {regs.dsr:02X}:{regs.ea:04X}H
-
-                   C Z S OV MIE HC ELEVEL
-PSW             {psw:02X} {self.fmt_x(psw_f[0])} {self.fmt_x(psw_f[1])} {self.fmt_x(psw_f[2])}  {self.fmt_x(psw_f[3])}  {self.fmt_x(psw_f[4])}   {self.fmt_x(psw_f[5])} {psw_f[6:]} ({int(psw_f[6:], 2)})
-
-LCSR:LR         {self.sim.get_addr_label(regs.lcsr, regs.lr)}
-ECSR1:ELR1      {self.sim.get_addr_label(regs.ecsr[0], regs.elr[0])}
-ECSR2:ELR2      {self.sim.get_addr_label(regs.ecsr[1], regs.elr[1])}
-ECSR3:ELR3      {self.sim.get_addr_label(regs.ecsr[2], regs.elr[2])}
-
-EPSW1           {regs.epsw[0]:02X}
-EPSW2           {regs.epsw[1]:02X}
-EPSW3           {regs.epsw[2]:02X}
-
-Other information:
-STOP acceptor            1 [{'x' if self.sim.sim.c_config.stop_accept[0] else ' '}]  2 [{'x' if self.sim.sim.c_config.stop_accept[1] else ' '}]
-STOP mode                [{'x' if self.sim.stop_mode else ' '}]
-Shutdown acceptor        [{'x' if self.sim.shutdown_accept else ' '}]
-Shutdown state           [{'x' if self.sim.shutdown else ' '}]
-Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
-{nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if config.hardware_id == 6 else ''}\
-{(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
-'''
-
-class CallStackDisplay(tk.Toplevel):
-	def __init__(self, sim):
-		super(CallStackDisplay, self).__init__()
-		self.sim = sim
-		
-		self.withdraw()
-		self.geometry('400x800')
-		self.title('Call stack display')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-		self['bg'] = config.console_bg
-
-		self.info_label = tk.Label(self, font = config.console_font, fg = config.console_fg, bg = config.console_bg, justify = 'left', anchor = 'nw')
-		self.info_label.pack(side = 'left', fill = 'both')
-
-	def open(self):
-		self.deiconify()
-		self.print_regs()
-
-	def print_regs(self):
-		try: wm_state = self.wm_state()
-		except Exception: return
-
-		regs = self.sim.sim.core.regs
-
-		nl = '\n'
-
-
-		if wm_state == 'normal':
-			a = []
-			for j in range(len(self.sim.call_trace)):
-				i = self.sim.call_trace[j]
-				a.append(f'#{j}{nl}Function address  {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}Return address    {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
-
-			self.info_label['text'] = f'''\
-=== CALL STACK === ({len(self.sim.call_trace)} calls)
-{''.join(a)}
-'''
-
-class Debugger(tk.Toplevel):
-	def __init__(self, sim):
-		super(Debugger, self).__init__()
-		self.sim = sim
-
-		self.disas_hi = 17
-
-		self.withdraw()
-		self.geometry('1200x600')
-		self.resizable(False, False)
-		self.title('Debugger (beta)')
-		self.protocol('WM_DELETE_WINDOW', self.withdraw)
-
-		self.bind('\\', lambda x: self.sim.set_step())
-		self.sim.bind_(self, 's', lambda x: self.sim.set_single_step(True))
-		self.sim.bind_(self, 'p', lambda x: self.sim.set_single_step(False))
-
-		f_disas = tk.Frame(self, width = 800, height = 300)
-		f_disas.grid(row = 0, column = 0, sticky = 'nw')
-		f_disas.pack_propagate(False)
-		ttk.Label(f_disas, text = 'Disassembly').pack()
-		self.disas = tk.Text(f_disas, state = 'disabled', height = self.disas_hi)
-		self.disas.pack(fill = 'x')
-
-		f_regs = tk.Frame(self, width = 800, height = 300)
-		f_regs.grid(row = 0, column = 0, sticky = 'sw')
-		f_regs.pack_propagate(False)
-		ttk.Label(f_regs, text = 'Register list').pack()
-		r_frame_outer = tk.Frame(f_regs)
-		r_frame = []; r_entry = []; self.r = []
-		for i in range(16):
-			r_frame.append(tk.Frame(r_frame_outer))
-			self.r.append(tk.StringVar())
-			r_entry.append(ttk.Entry(r_frame[i], width = 3, state = 'readonly', textvariable = self.r[i]))
-			r_entry[i].pack()
-			ttk.Label(r_frame[i], text = f'R{i}').pack(side = 'bottom')
-			r_frame[i].pack(side = 'left', expand = True)
-		r_frame_outer.pack(fill = 'x')
-
-		f_call = tk.Frame(self, width = 400, height = 600)
-		f_call.grid(row = 0, column = 1, sticky = 'se')
-		f_call.pack_propagate(False)
-		ttk.Label(f_call, text = 'Call stack\n(Note: actual stack data may be different)', justify = 'center').pack()
-		self.call_stack = tk.Text(f_call, state = 'disabled')
-		scroll = tk.Scrollbar(f_call, orient = 'vertical', command = self.call_stack.yview)
-		self.call_stack.configure(yscrollcommand = scroll.set)
-		scroll.pack(side = 'right', fill = 'y')
-		self.call_stack.pack(side = 'left', fill = 'both', expand = True)
-		
-	def open(self):
-		self.deiconify()
-		self.update()
-
-	def update(self):
-		try: wm_state = self.wm_state()
-		except Exception: return
-
-		regs = self.sim.sim.core.regs
-
-		nl = '\n'
-
-		if wm_state == 'normal':
-			instructions = ['']*self.disas_hi
-			cur_csr = regs.csr
-			cur_pc = regs.pc
-			format_ins = lambda ins_len, inst: f'{">>>" if i == 0 else "   "} {cur_csr:X}:{cur_pc:04X}H    {"".join(format(self.sim.read_cmem((cur_pc + i*2) & 0xfffe, cur_csr), "04X") for i in range(ins_len // 2)):<13}    {inst}'
-			for i in range(self.disas_hi):
-				ins, ins_len = self.sim.decode_instruction(cur_csr, cur_pc)
-				instructions[i] = format_ins(ins_len, ins)
-				cur_pc = (cur_pc + ins_len) & 0xfffe
-
-			self.disas['state'] = 'normal'
-			self.disas.delete('1.0', 'end')
-			self.disas.insert('1.0', nl.join(instructions))
-			self.disas['state'] = 'disabled'
-
-			for i in range(16):
-				if self.r[i].get() != f'{self.sim.sim.core.regs.gp[i]:02X}': self.r[i].set(f'{self.sim.sim.core.regs.gp[i]:02X}')
-
-			a = []
-			for j in range(len(self.sim.call_trace)):
-				i = self.sim.call_trace[j]
-				a.append(f'#{j}{nl}⇨ {self.sim.get_addr_label(i[0] >> 16, i[0] & 0xfffe)}{nl}⇦ {self.sim.get_addr_label(i[1] >> 16, i[1] & 0xfffe)}{nl*2}')
-			self.call_stack['state'] = 'normal'
-			self.call_stack.delete('1.0', 'end')
-			self.call_stack.insert('1.0', f'''\
-{len(self.sim.call_trace)} calls
-
-{''.join(a)}
-''')
-			self.call_stack['state'] = 'disabled'
-
-
-class WDT:
-	def __init__(self, sim):
-		self.sim = sim
-		self.mode = None
-		self.ms = (4096, 16384, 65536, 262144)
-		self.counter = 0
-
-	def start_wdt(self, mode = 2):
-		self.mode = mode
-		self.counter = self.ms[self.mode]
-
-	def dec_wdt(self):
-		self.counter -= 1
-		if self.counter == 0: self.wdt_loop()
-
-	def wdt_loop(self):
-		self.sim.sim.c_config.sfr[0x18] |= 1
-		self.mode = self.sim.sim.c_config.sfr[0xf] & 3
-		self.counter = self.ms[self.mode]
-
 class Sim:
 	def __init__(self, no_clipboard, bcd):
 		self.copyclip = no_clipboard
@@ -1250,17 +631,37 @@ class Sim:
 		if hasattr(config, 'keymap'):
 			for key in [i[1:] for i in config.keymap.values()]: self.keys.extend(key)
 
-		self.jump = Jump(self)
-		self.brkpoint = Brkpoint(self)
-		self.write = Write(self)
-		self.data_mem = DataMem(self)
-		self.gp_modify = GPModify(self)
-		self.reg_display = RegDisplay(self)
-		self.call_display = CallStackDisplay(self)
-		self.debugger = Debugger(self)
-		self.wdt = WDT(self)
-		if bcd: self.bcd = BCD(self)
-		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py containing a "BCD" class with at least a "tick" function.')
+		# windows
+		self.jump = gui.Jump(self)
+		self.brkpoint = gui.Brkpoint(self)
+		self.write = gui.Write(self)
+		self.data_mem = gui.DataMem(self, config.data_mem_width, config.data_mem_height, config.data_mem_font)
+		self.gp_modify = gui.GPModify(self)
+		self.reg_display = gui.RegDisplay(self, config.console_fg, config.console_bg, config.console_font)
+		self.call_display = gui.CallStackDisplay(self, config.console_fg, config.console_bg, config.console_font)
+		self.debugger = gui.Debugger(self)
+
+		self.screen_stuff = {
+	   # hwid: (alloc, used, rows,buffers,          columns)
+			0: (0x8,   0x8,  3,   [],               64),
+			2: (0x10,  0xc,  32,  [0x80e0 if self.is_5800p else 0x8600], 96),
+			3: (0x10,  0xc,  32,  [0x87d0],         96),
+			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
+			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
+			6: (0x8,   0x8,  192, [None, None],     64),
+		}
+
+		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
+		else: self.scr = self.screen_stuff[3]
+
+		# actual peripherals
+		self.disp = peripheral.Screen(self, self.scr)
+		self.wdt = peripheral.WDT(self)
+		self.standby = peripheral.Standby(self)
+		self.timer = peripheral.Timer(self)
+		if peripheral.bcd: self.bcd = peripheral.BCD(self)
+
+		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py in the "peripheral" directory containing a "BCD" class with at least a "tick" function.')
 		self.disas = disas_main.Disasm()
 
 		if hasattr(config, 'labels') and config.labels:
@@ -1290,9 +691,9 @@ class Sim:
 						else:
 							if config.real_hardware:
 								self.sim.c_config.sfr[0x14] = 2
-								if self.sim.c_config.sfr[0x42] & (1 << k[0]): self.stop_mode = False
+								if self.sim.c_config.sfr[0x42] & (1 << k[0]): self.standby.stop_mode = False
 							else:
-								self.stop_mode = False
+								self.standby.stop_mode = False
 								self.write_emu_kb(1, 1 << k[0])
 								self.write_emu_kb(2, 1 << k[1])
 					elif len(self.keys_pressed) == 0: self.curr_key = k
@@ -1385,19 +786,6 @@ class Sim:
 		self.rc_menu.add_command(label = 'Call stack display', command = self.call_display.open)
 		self.rc_menu.add_command(label = 'Debugger (beta)', command = self.debugger.open)
 		self.rc_menu.add_separator()
-
-		self.screen_stuff = {
-	   # hwid: (alloc, used, rows,buffers,          columns)
-			0: (0x8,   0x8,  4,   [],               64),
-			2: (0x10,  0xc,  32,  [0x80e0 if self.is_5800p else 0x8600], 96),
-			3: (0x10,  0xc,  32,  [0x87d0],         96),
-			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
-			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
-			6: (0x8,   0x8,  192, [None, None],     64),
-		}
-
-		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
-		else: self.scr = self.screen_stuff[3]
 		
 		if config.hardware_id == 6: self.display = pygame.Surface((self.scr[2]*config.pix if self.status_bar is None else self.status_bar.get_width(), (self.scr[4])*self.pix_hi + self.sbar_hi))
 		elif config.hardware_id == 0: self.display = pygame.Surface((self.scr[4]*config.pix if self.status_bar is None else self.status_bar.get_width(), 13*self.pix_hi + self.sbar_hi))
@@ -1500,9 +888,9 @@ class Sim:
 			self.cwii_screen_hi = [bytearray(32) for _ in range(64)]
 			self.cwii_screen_lo = [bytearray(32) for _ in range(64)]
 
-		self.curr_buffer = 0
+		self.curr_buffer = -1
 
-		self.single_step = True
+		self.single_step = False
 		self.ok = True
 		self.step = False
 		self.brkpoints = {}
@@ -1511,16 +899,8 @@ class Sim:
 
 		self.prev_csr_pc = None
 		self.prev_prev_csr_pc = None
-		self.stop_mode = False
 		self.shutdown_accept = False
 		self.shutdown = False
-
-		self.nsps = 1e9
-		self.max_ns_per_update = 1e9
-		self.max_ticks_per_update = 100
-		self.tps = 10000
-		self.last_time = 0
-		self.passed_time = 0
 
 		self.int_timer = 0
 
@@ -1676,8 +1056,6 @@ class Sim:
 	def set_step(self): self.step = True
 
 	def set_single_step(self, val):
-		if self.single_step == val: return
-
 		self.single_step = val
 		if val: self.update_displays()
 		else: threading.Thread(target = self.core_step_loop, daemon = True).start()
@@ -1713,47 +1091,6 @@ class Sim:
 
 			elif temp == 6: self.qr_active = False
 
-	def sbycon(self):
-		if self.sim.c_config.sfr[9] & (1 << 1):
-			if all(self.sim.c_config.stop_accept):
-				self.stop_mode = True
-				self.sim.c_config.stop_accept[0] = self.sim.c_config.stop_accept[1] = False
-				self.sim.c_config.sfr[8] = 0
-				self.sim.c_config.sfr[0x22] = 0
-				self.sim.c_config.sfr[0x23] = 0
-			else: self.sim.c_config.sfr[9] &= ~(1 << 1)
-
-	def timer(self):
-		now = time.time_ns()
-		passed_ns = now - self.last_time
-		self.last_time = now
-		if passed_ns < 0: passed_ns = 0
-		elif passed_ns > self.max_ns_per_update: passed_ns = 0
-
-		self.passed_time += passed_ns * self.tps / self.nsps
-		ticks = int(self.passed_time) if self.passed_time < 100 else 100
-		self.passed_time -= ticks
-
-		self.timer_tick(ticks)
-
-	def timer_tick(self, tick):
-		if self.sim.c_config.sfr[0x25] & 1:
-			counter = (self.sim.c_config.sfr[0x23] << 8) + self.sim.c_config.sfr[0x22]
-			target = (self.sim.c_config.sfr[0x21] << 8) + self.sim.c_config.sfr[0x20]
-
-			counter = (counter + tick) & 0xffff
-
-			self.sim.c_config.sfr[0x22] = counter & 0xff
-			self.sim.c_config.sfr[0x23] = counter >> 8
-
-			if counter >= target and self.stop_mode:
-				self.stop_mode = False
-				self.sim.c_config.sfr[9] &= ~(1 << 1)
-				self.sim.c_config.sfr[0x14] = 0x20
-				if not config.real_hardware:
-					self.write_emu_kb(1, 0)
-					self.write_emu_kb(2, 0)
-
 	@staticmethod
 	def find_bit(num): return (num & -num).bit_length() - 1
 
@@ -1773,7 +1110,7 @@ class Sim:
 		mie = elevel & (1 << 3) if elevel == 1 else 1
 		if cond and (self.sim.core.regs.psw & 3 >= elevel or elevel == 2) and mie:
 			#logging.info(f'{intdata[3]} interrupt raised {"@ "+self.get_addr_label(self.sim.core.regs.csr, self.sim.core.regs.pc) if intdata[3] != "WDTINT" else ""}')
-			self.stop_mode = False
+			self.standby.stop_mode = False
 			self.sim.c_config.sfr[irq] &= ~(1 << bit)
 			self.sim.core.regs.elr[elevel-1] = self.sim.core.regs.pc
 			self.sim.core.regs.ecsr[elevel-1] = self.sim.core.regs.csr
@@ -1788,7 +1125,7 @@ class Sim:
 	def core_step(self):
 		if self.shutdown: return
 		prev_csr_pc = f'{self.sim.core.regs.csr:X}:{self.sim.core.regs.pc:04X}H'
-		if not self.stop_mode:
+		if not self.standby.stop_mode:
 			prev_csrpc_int = (self.sim.core.regs.csr << 16) + self.sim.core.regs.pc
 
 			ins_word = self.read_cmem(self.sim.core.regs.pc, self.sim.core.regs.csr)
@@ -1849,8 +1186,7 @@ class Sim:
 				if self.sim.core.last_write_size != 0 and any(self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
-			if self.stop_mode: self.timer()
-			else: self.sbycon()
+			if self.standby.stop_mode: self.timer.timer()
 			self.keyboard()
 		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
@@ -2158,7 +1494,7 @@ class Sim:
 		elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
 		self.call_trace = []
-		self.stop_mode = False
+		self.standby.stop_mode = False
 		self.shutdown = False
 		self.prev_csr_pc = None
 		self.update_displays()
@@ -2194,17 +1530,16 @@ class Sim:
 			self.screen_changed = False
 			self.display.fill((214, 227, 214) if config.hardware_id != 6 else (255, 255, 255))
 
-			if config.hardware_id == 0: scr_bytes = self.read_dmem_bytes(0xf800, 0x20)
-			elif config.hardware_id == 5 and config.real_hardware and not disp_lcd: scr_bytes = [bytes(i) for i in self.cwii_screen_lo]
-			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: scr_bytes = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + i*self.scr[1] if disp_lcd else 0xf800 + i*self.scr[0], self.scr[1]) for i in range(self.scr[2])]
-			if config.hardware_id == 6 and self.scr[3][0] is not None: scr_bytes = [0 if self.scr[3][1] is None else int.from_bytes(self.read_dmem_bytes(self.scr[3][1], 3), 'little')] + scr_bytes
-			if config.hardware_id == 5:
-				if config.real_hardware and not disp_lcd: scr_bytes_hi = [bytes(i) for i in self.cwii_screen_hi]
-				else:
-					if disp_lcd: scr_bytes_hi = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
-					else: scr_bytes_hi = [self.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8) for i in range(self.scr[2])]
-				screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
-			elif (disp_lcd != 0 and self.scr[3][disp_lcd-1] is not None) or disp_lcd == 0: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
+			if disp_lcd:
+				if self.scr[3][disp_lcd-1] is not None: scr_bytes = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
+				if config.hardware_id == 6 and self.scr[3][0] is not None: scr_bytes = [0 if self.scr[3][1] is None else int.from_bytes(self.read_dmem_bytes(self.scr[3][1], 3), 'little')] + scr_bytes
+				if config.hardware_id == 5:
+					scr_bytes_hi = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
+					screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
+				elif self.scr[3][disp_lcd-1] is not None: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)
+			else:
+				self.disp.update_emu_hi_scr() 
+				screen_data_status_bar, screen_data = self.disp.get_scr_data()
 			
 			scr_range = 0 if self.force_display else self.sim.c_config.sfr[0x30] & 7
 			scr_mode = 5 if self.force_display else self.sim.c_config.sfr[0x31] & 7
@@ -2322,6 +1657,6 @@ if __name__ == '__main__':
 	tk.Tk.report_callback_exception = report_exception
 
 	try:
-		sim = Sim(no_clipboard, bcd)
+		sim = Sim(no_clipboard, peripheral.bcd)
 		sim.run()
 	except Exception: report_exception(*sys.exc_info())

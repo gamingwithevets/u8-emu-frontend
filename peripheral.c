@@ -13,7 +13,6 @@ struct config
 	bool ko_mode;
 	bool sample;
 	bool is_5800p;
-	bool stop_accept[2];
 	uint8_t pd_value;
 	uint8_t *rom;
 	uint8_t *flash;
@@ -80,6 +79,7 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 
 	// Main RAM
 	config->ram = malloc(ramsize);
+	memset(config->ram, 0, ramsize);
 	add_mem_region(core, (struct u8_mem_reg){
 		.type = U8_REGION_DATA,
 		.rw = true,
@@ -91,6 +91,7 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 
 	// SFRs
 	config->sfr = malloc(0x1000);
+	memset(config->sfr, 0, 0x1000);
 	add_mem_region(core, (struct u8_mem_reg){
 		.type = U8_REGION_DATA,
 		.rw = true,
@@ -252,14 +253,4 @@ void core_step(struct config *config, struct u8_core *core) {
 	
 	core->regs.csr &= (config->real_hw && config->hwid == 3) ? 1 : 0xf;
 	u8_step(core);
-	
-	if (config->hwid != 6) {
-		uint8_t stpacp = read_mem_data(core, 0, 0xf008, 1);
-		if (config->stop_accept[0]) {
-			if (!config->stop_accept[1]) {
-				if ((stpacp & 0xa0) == 0xa0) config->stop_accept[1] = true;
-				else if ((stpacp & 0x50) != 0x50) config->stop_accept[0] = false;
-			}
-		} else if ((stpacp & 0x50) == 0x50) config->stop_accept[0] = true;
-	}
 }
