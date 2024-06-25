@@ -659,6 +659,7 @@ class Sim:
 		self.wdt = peripheral.WDT(self)
 		self.standby = peripheral.Standby(self)
 		self.timer = peripheral.Timer(self)
+		self.kb = peripheral.Keyboard(self)
 		if peripheral.bcd: self.bcd = peripheral.BCD(self)
 
 		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py in the "peripheral" directory containing a "BCD" class with at least a "tick" function.')
