@@ -133,9 +133,10 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 			} else {
 				// Segment 4/8 [emulator]
 				config->emu_seg = malloc(0x10000);
+				memset(config->emu_seg, 0, 0x10000);
 				add_mem_region(core, (struct u8_mem_reg){
 					.type = U8_REGION_DATA,
-					.rw = false,
+					.rw = true,
 					.addr_l = config->hwid == 5 ? 0x80000 : 0x40000,
 					.addr_h = config->hwid == 5 ? 0x8ffff : 0x4ffff,
 					.acc = U8_MACC_ARR,

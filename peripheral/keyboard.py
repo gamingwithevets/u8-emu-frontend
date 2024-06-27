@@ -3,4 +3,5 @@ class Keyboard:
 		self.sim = sim
 
 		# placeholder
-		self.sim.sim.register_sfr(0x41, 0xf)
+		self.sim.sim.register_sfr(0x41, 0xe)
+		self.sim.sim.c_config.sfr[0x50] = self.sim.sim.c_config.pd_value

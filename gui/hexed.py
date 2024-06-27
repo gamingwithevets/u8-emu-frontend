@@ -113,7 +113,7 @@ class DataMem(tk.Toplevel):
 				size = 0xe00 if self.sim.sim.c_config.real_hw and self.sim.sim.c_config.hwid in (2, 3) else self.sim.sim.ramsize
 				data = self.format_mem(bytes(self.sim.sim.c_config.ram[:size]), self.sim.sim.ramstart)
 			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.c_config.sfr[:0x1000]), 0xf000)
-			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.c_config.emu_seg), 0, 4 if self.sim.sim.c_config.hwid == 4 else 8)
+			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.c_config.emu_seg[:0x10000]), 0, 4 if self.sim.sim.c_config.hwid == 4 else 8)
 			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
 			else: data = '[No region selected yet.]'
 
