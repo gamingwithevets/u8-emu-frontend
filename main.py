@@ -223,6 +223,17 @@ class Core:
 
 		if config.hardware_id == 2 and self.sim.is_5800p: self.c_config.sfr[0x46] = 4
 		self.register_sfr(0, 1, self.write_dsr)
+
+		if config.hardware_id == 5:
+			self.bcd = peripheral.BCD(self.sim)
+			self.register_sfr(0x400, 1, self.bcd.tick)  # BCDCMD
+			self.register_sfr(0x402, 1, self.bcd.tick)  # BCDCON
+			self.c_config.sfr[0x402] = 6
+			self.register_sfr(0x404, 1, self.bcd.tick)  # BCDMCN
+			self.register_sfr(0x405, 1, self.bcd.tick)  # BCDMCR
+			self.register_sfr(0x410, 1)                 # BCDFLG
+			# F414H: BCDLLZ, F415H: BCDMLZ (both read-only)
+			for i in range(4): self.register_sfr(0x480 + i*0x20, 12)  # BCDREG000 - BCDREG311
 	
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 
@@ -660,9 +671,6 @@ class Sim:
 		self.standby = peripheral.Standby(self)
 		self.timer = peripheral.Timer(self)
 		self.kb = peripheral.Keyboard(self)
-		if peripheral.bcd: self.bcd = peripheral.BCD(self)
-
-		if config.hardware_id == 5: print('TIP: To use a custom BCD coprocessor, create a bcd.py in the "peripheral" directory containing a "BCD" class with at least a "tick" function.')
 		self.disas = disas_main.Disasm()
 
 		if hasattr(config, 'labels') and config.labels:
@@ -867,7 +875,7 @@ class Sim:
 		options.add_checkbutton(label = 'IPS display (in register display)', variable = self.enable_ips_tk, command = self.set_enable_ips)
 		options.add_checkbutton(label = 'FPS display', variable = self.enable_fps_tk, command = self.set_enable_fps)
 		if config.hardware_id == 6: options.add_checkbutton(label = 'Always update display', variable = self.always_update_tk, command = self.set_always_update)
-		if config.hardware_id in (3, 4, 5): options.add_checkbutton(label = 'Force normal screen', variable = self.force_display_tk, command = self.set_force_display)
+		if config.hardware_id in (2, 3, 4, 5): options.add_checkbutton(label = 'Force normal screen', variable = self.force_display_tk, command = self.set_force_display)
 		self.rc_menu.add_cascade(label = 'Options', menu = options)
 
 		self.rc_menu.add_separator()

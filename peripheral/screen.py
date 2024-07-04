@@ -41,7 +41,9 @@ class Screen:
 			for i in range(self.scr[2]):
 				data = self.sim.read_dmem_bytes(0x9000 + i*self.scr[0], self.scr[1], 8)
 				for j in range(self.scr[1]):
-					for k in range(8): self.screen[i][j*8+k] |= 2 if data[j] & (1 << (~k & 7)) else 0
+					for k in range(8):
+						if data[j] & (1 << (~k & 7)): self.screen[i][j*8+k] |= 2
+						else: self.screen[i][j*8+k] &= ~2
 
 	def get_scr_data(self): return self._get_scr_data(tuple(tuple(_) for _ in self.screen))
 
