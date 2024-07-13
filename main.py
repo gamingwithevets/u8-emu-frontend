@@ -224,6 +224,11 @@ class Core:
 		if config.hardware_id == 2 and self.sim.is_5800p: self.c_config.sfr[0x46] = 4
 		self.register_sfr(0, 1, self.write_dsr)
 
+		if config.hardware_id in (4, 5):
+			self.register_sfr(0xd0, 1)
+			self.register_sfr(0xd1, 1, lambda x, y: 6 if self.c_config.sfr[0xd0] == 3 and self.c_config.sfr[0xd2] == 0 and y == 5 else y)
+			self.register_sfr(0xd2, 1)
+
 		if config.hardware_id == 5:
 			self.bcd = peripheral.BCD(self.sim)
 			self.register_sfr(0x400, 1, self.bcd.tick)  # BCDCMD
@@ -267,7 +272,7 @@ class Core:
 						if self.c_config.sfr[0x37] & 4: self.sim.cwii_screen_hi[y][x] = value
 						else: self.sim.cwii_screen_lo[y][x] = value
 						return value
-					elif addr == 0xd1: return 6 if self.c_config.sfr[0xd0] == 3 and self.c_config.sfr[0xd2] == 0 and value == 5 else value
+					elif addr == 0xd1: return 
 				if addr == 0x312:
 					if self.sim.shutdown_accept:
 						if value == 0x3c:
