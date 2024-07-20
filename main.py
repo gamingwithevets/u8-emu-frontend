@@ -1250,8 +1250,8 @@ class Sim:
 		if self.qr_active:
 			url = bytearray()
 			x = 0xa800
-			while self.sim.rw_seg[x] != 0:
-				url.append(self.sim.rw_seg[x])
+			while self.sim.c_config.emu_seg[x] != 0:
+				url.append(self.sim.c_config.emu_seg[x])
 				x += 1
 			return bytes(url).decode()
 		else: tk.messagebox.showerror('Error', 'No QR code is currently present on-screen!')
