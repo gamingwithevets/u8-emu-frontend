@@ -1291,7 +1291,7 @@ class Sim:
 			last_dsr_prefix_str = f'DW {int.from_bytes(self.disas.input_file[:2], "little"):04X}'
 			self.disas.addr += 2
 			ins_str, inslen, _, used_dsr_prefix = self.disas.decode_ins(True)
-			ins_len + inslen
+			ins_len += inslen
 			if used_dsr_prefix: return ins_str, ins_len
 			else: return last_dsr_prefix_str, 2
 		return ins_str, ins_len
