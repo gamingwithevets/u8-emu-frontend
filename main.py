@@ -776,14 +776,11 @@ class Sim:
 		else: self.sbar_hi = 0
 
 		self.disp_lcd = tk.IntVar(value = 0)
-		self.enable_ips = False
-		self.enable_ips_tk = tk.BooleanVar(value = self.enable_ips)
-		self.enable_fps = True
-		self.enable_fps_tk = tk.BooleanVar(value = self.enable_fps)
-		self.always_update = False
-		self.always_update_tk = tk.BooleanVar(value = self.always_update)
-		self.force_display = False
-		self.force_display_tk = tk.BooleanVar(value = self.force_display)
+		self.init_tk_var('enable_ips', False)
+		self.init_tk_var('enable_fps', True)
+		self.init_tk_var('always_update', False)
+		self.init_tk_var('force_display', False)
+		self.init_tk_var('factory_test', False)
 
 		self.rc_menu = tk.Menu(self.root, tearoff = 0)
 		self.rc_menu.add_command(label = 'Step', accelerator = '\\', command = self.set_step)
@@ -878,9 +875,10 @@ class Sim:
 		
 		options = tk.Menu(self.rc_menu, tearoff = 0)
 		options.add_checkbutton(label = 'IPS display (in register display)', variable = self.enable_ips_tk, command = self.set_enable_ips)
-		options.add_checkbutton(label = 'FPS display', variable = self.enable_fps_tk, command = self.set_enable_fps)
-		if config.hardware_id == 6: options.add_checkbutton(label = 'Always update display', variable = self.always_update_tk, command = self.set_always_update)
-		if config.hardware_id in (2, 3, 4, 5): options.add_checkbutton(label = 'Force normal screen', variable = self.force_display_tk, command = self.set_force_display)
+		options.add_checkbutton(label = 'FPS display', variable = self.enable_fps_tk, command = lambda: self.set_tk_var('enable_fps'))
+		if config.hardware_id == 6: options.add_checkbutton(label = 'Always update display', variable = self.always_update_tk, command = lambda: self.set_tk_var('always_update'))
+		if config.hardware_id in (2, 3, 4, 5): options.add_checkbutton(label = 'Force normal screen', variable = self.force_display_tk, command = lambda: self.set_tk_var('force_display'))
+		if config.hardware_id in (3, 4, 5): options.add_checkbutton(label = 'Factory test mode', variable = self.factory_test_tk, command = lambda: self.set_tk_var('factory_test'))
 		self.rc_menu.add_cascade(label = 'Options', menu = options)
 
 		self.rc_menu.add_separator()
@@ -940,9 +938,10 @@ class Sim:
 			self.ips_start = time.time()
 			self.ips_ctr = 0
 
-	def set_enable_fps(self): self.enable_fps = self.enable_fps_tk.get()
-	def set_always_update(self): self.always_update = self.always_update_tk.get()
-	def set_force_display(self): self.force_display = self.force_display_tk.get()
+	def init_tk_var(self, var, val):
+		setattr(self, var, val)
+		setattr(self, var+'_tk', tk.BooleanVar(value = getattr(self, var)))
+	def set_tk_var(self, var): setattr(self, var, getattr(self, var+'_tk').get())
 
 	@functools.lru_cache
 	def get_emu_kb_addr(self, idx):
@@ -1084,6 +1083,10 @@ class Sim:
 			self.set_single_step(sstep_bak)
 
 	def keyboard(self):
+		if not self.sim.c_config.sfr[0x46] and self.factory_test:
+			self.sim.c_config.sfr[0x40] = 0b11100111
+			return
+
 		ki = 0xff
 		if len(self.keys_pressed) > 0:
 			ko = self.sim.c_config.sfr[0x44] ^ 0xff if self.ko_mode else self.sim.c_config.sfr[0x46]
