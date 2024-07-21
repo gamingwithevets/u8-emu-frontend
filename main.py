@@ -185,7 +185,7 @@ class Core:
 		self.sim = sim
 
 		pd_value = config.pd_value if hasattr(config, 'pd_value') else 0
-		self.c_config = c_config(config.hardware_id, config.real_hardware, self.sim.ko_mode, self.sim.is_5800p)
+		self.c_config = c_config(config.hardware_id, config.real_hardware, self.sim.ko_mode, self.sim.sample, self.sim.is_5800p)
 		self.c_config.pd_value = pd_value
 
 		self.core = u8_core_t()

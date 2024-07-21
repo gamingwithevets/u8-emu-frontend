@@ -40,9 +40,7 @@ uint8_t read_sfr(struct u8_core *core, uint8_t seg, uint16_t addr) {
 }
 
 void write_sfr(struct u8_core *core, uint8_t seg, uint16_t addr, uint8_t val) {
-	if (confptr->sfr_write[addr]) {
-		confptr->sfr[addr] = confptr->sfr_write[addr](addr, val);
-	}
+	if (confptr->sfr_write[addr]) confptr->sfr[addr] = confptr->sfr_write[addr](addr, val);
 }
 
 uint8_t battery(struct u8_core *core, uint8_t seg, uint16_t addr) {
@@ -51,7 +49,6 @@ uint8_t battery(struct u8_core *core, uint8_t seg, uint16_t addr) {
 
 uint8_t read_flash(struct u8_core *core, uint8_t seg, uint16_t offset) {
 	uint32_t fo = ((seg << 16) + offset) & 0x7ffff;
-	printf("write_flash: read: %05X\n", fo);
 	if (confptr->flash_mode == 6) {
 		confptr->flash_mode = 0;
 		return 0x80;
@@ -85,7 +82,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 			}
 			break;
 		case 3:
-			printf("write_flash: program %x to %x\n", (int)fo, data);
+			printf("%05X = %02x\n", fo + 0x80000, data);
 			confptr->flash[fo] = data;
 			confptr->flash_mode = 0;
 			return;
@@ -106,7 +103,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 				memset(&confptr->flash[fo], 0xff, 0x7fff);
 			if (fo == 0x20000 || fo == 0x30000)
 				memset(&confptr->flash[fo], 0xff, 0xffff);
-			printf("write_flash: erase %x (%x)\n", (int)fo, data);
+			printf("erase %05X (%02x)\n", fo+0x80000, data);
 			return;
 		case 7:
 			if (fo == 0xaaa && data == 0xaa) {
@@ -116,7 +113,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 			break;
 	}
 	if (data == 0xf0) {
-		printf("write_flash: reset mode\n");
+		//printf("write_flash: reset mode\n");
 		confptr->flash_mode = 0;
 		return;
 	}
