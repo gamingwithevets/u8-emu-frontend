@@ -300,17 +300,19 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 					.write = &write_flash
 				});
 
-				// Flash RAM
+				// PRAM
+				config->emu_seg = malloc(0x80000);
+				memset(config->emu_seg, 0, 0x80000);
 				add_mem_region(core, (struct u8_mem_reg){
 					.type = U8_REGION_DATA,
 					.rw = true,
 					.addr_l = 0x40000,
 					.addr_h = 0x47fff,
 					.acc = U8_MACC_ARR,
-					.array = (uint8_t *)(config->flash + 0x20000)
+					.array = config->emu_seg
 				});
 
-				// Fake battery
+				// Battery
 				add_mem_region(core, (struct u8_mem_reg){
 					.type = U8_REGION_DATA,
 					.rw = false,

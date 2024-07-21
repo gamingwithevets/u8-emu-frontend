@@ -82,7 +82,7 @@ class DataMem(tk.Toplevel):
 			if self.sim.sim.c_config.hwid == 4: segments.append('Segment 4 (04:0000H - 04:FFFFH)')
 			elif self.sim.sim.c_config.hwid == 5: segments.append('Segment 8 (08:0000H - 08:FFFFH)')
 		if self.sim.sim.c_config.hwid in (2, 3): segments[0] = f'RAM (00:8000H - 00:{"8DFF" if self.sim.sim.c_config.real_hw else "EFFF"}H)'
-		if self.sim.sim.c_config.hwid == 2 and self.sim.is_5800p: segments.append('Flash RAM (04:0000H - 04:7FFFH)')
+		if self.sim.sim.c_config.hwid == 2 and self.sim.is_5800p: segments.append('PRAM (04:0000H - 04:7FFFH)')
 
 		self.segment_var = tk.StringVar(value = segments[0])
 		self.segment_cb = ttk.Combobox(self, width = 35, textvariable = self.segment_var, values = segments, state = 'readonly')
@@ -114,7 +114,7 @@ class DataMem(tk.Toplevel):
 				data = self.format_mem(bytes(self.sim.sim.c_config.ram[:size]), self.sim.sim.ramstart)
 			elif seg.startswith('SFRs'): data = self.format_mem(bytes(self.sim.sim.c_config.sfr[:0x1000]), 0xf000)
 			elif seg.startswith('Segment'): data = self.format_mem(bytes(self.sim.sim.c_config.emu_seg[:0x10000]), 0, 4 if self.sim.sim.c_config.hwid == 4 else 8)
-			elif seg.startswith('Flash RAM'): data = self.format_mem(bytes(self.sim.sim.flash_mem[0x20000:0x28000]), 0, 4)
+			elif seg.startswith('PRAM'): data = self.format_mem(bytes(self.sim.sim.c_config.emu_seg[:0x8000]), 0, 4)
 			else: data = '[No region selected yet.]'
 
 			self.code_text['state'] = 'normal'
