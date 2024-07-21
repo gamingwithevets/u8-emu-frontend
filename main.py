@@ -1031,8 +1031,9 @@ class Sim:
 			version = self.read_dmem_bytes(0xfff4, 6, 1).decode()
 			rev = self.read_dmem_bytes(0xfffa, 2, 1).decode()
 			csum1 = self.read_dmem(0xfffc, 2, 1)
-			for i in range(0x8000 if self.ko_mode else 0x10000): csum -= self.read_dmem(i, 1, 0 if self.ko_mode else 8)
-			for i in range(0xfffc): csum -= self.read_dmem(i, 1, 1)
+			a = int(version.startswith('CY-8'))+1
+			for i in range(0, 0x8000 if self.ko_mode else 0x10000, a): csum -= self.read_dmem(i, a, 0 if self.ko_mode else 8)
+			for i in range(0, 0xfffc, a): csum -= self.read_dmem(i, a, 1)
 			
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
@@ -1062,7 +1063,7 @@ class Sim:
 			csum %= 0x10000
 			text = f'{version}\nV.{rev} Bt OK\nSUM{csum:04X} {"OK" if csum == csum1 else "NG"}'
 		else:
-			tk.messagebox.showinfo('ROM info only supports ES PLUS, CWI and CWII.')
+			tk.messagebox.showinfo('ROM info only supports ES PLUS and ClassWiz.')
 			return
 		
 		tk.messagebox.showinfo('ROM info', text)
@@ -1100,14 +1101,13 @@ class Sim:
 
 		self.sim.c_config.sfr[0x40] = ki
 
-		if not config.real_hardware:
-			temp = self.read_emu_kb(0)
-			if temp in (2, 8) and [self.read_emu_kb(i) for i in (1, 2)] != [1<<2, 1<<4]: self.write_emu_kb(0, 0)
-			elif temp in (5, 7) and not self.qr_active:
-				self.qr_active = True
-				tk.messagebox.showinfo('QR code', 'Detected emulator ROM QR code!\nGet the URL with right-click > Extra functions > QR code export > Copy URL to clipboard\n\nNote: due to the nature of the emulator, you might not see the QR code immediately')
-
-			elif temp == 6: self.qr_active = False
+	def check_stop_type(self):
+		temp = self.read_emu_kb(0)
+		if temp in (2, 8): self.write_emu_kb(0, int([self.read_emu_kb(i) for i in (1, 2)] == [1<<2, 1<<4]))
+		elif temp in (5, 7) and not self.qr_active:
+			self.qr_active = True
+			tk.messagebox.showinfo('QR code', 'Detected emulator ROM QR code!\nGet the URL with right-click > Extra functions > QR code export > Copy URL to clipboard\n\nNote: due to the nature of the emulator, you might not see the QR code immediately')
+		elif temp == 6: self.qr_active = False
 
 	@staticmethod
 	def find_bit(num): return (num & -num).bit_length() - 1
@@ -1203,8 +1203,10 @@ class Sim:
 				if self.sim.core.last_write_size != 0 and any(self.find_brkpoint(i, 2) for i in range(self.sim.core.last_write, self.sim.core.last_write + self.sim.core.last_write_size)): self.hit_brkpoint()
 			
 		if config.hardware_id != 6:
-			if self.standby.stop_mode: self.timer.timer()
+			if self.standby.stop_mode:
+				self.timer.timer()
 			self.keyboard()
+			if not config.real_hardware and self.standby.stop_mode: self.check_stop_type()
 		if (config.hardware_id != 2 or (config.hardware_id == 2 and self.is_5800p)) and self.int_timer == 0: self.check_ints()
 		if self.int_timer != 0: self.int_timer -= 1
 
