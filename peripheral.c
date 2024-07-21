@@ -113,7 +113,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 			break;
 	}
 	if (data == 0xf0) {
-		//printf("write_flash: reset mode\n");
+		printf("reset mode\n");
 		confptr->flash_mode = 0;
 		return;
 	}
