@@ -1159,7 +1159,6 @@ class Sim:
 				if self.sim.core.regs.psw & 3 < 2:
 					tk.messagebox.showwarning('Warning', 'BRK instruction hit!')
 					self.hit_brkpoint()
-				elif config.hardware_id == 2 and self.is_5800p: self.sim.write_mem_data(4, 0x7ffe, 2, 0x44ff)
 
 			try: sim_lib.core_step(ctypes.pointer(self.sim.c_config), ctypes.pointer(self.sim.core))
 			except Exception as e: logging.error(f'{e} @ {self.get_addr_label(self.sim.core.regs.csr, self.sim.core.regs.pc-2)}')

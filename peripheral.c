@@ -82,7 +82,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 			}
 			break;
 		case 3:
-			printf("%05X = %02x\n", fo + 0x80000, data);
+			//printf("%05X = %02x\n", fo + 0x80000, data);
 			confptr->flash[fo] = data;
 			confptr->flash_mode = 0;
 			return;
@@ -103,7 +103,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 				memset(&confptr->flash[fo], 0xff, 0x7fff);
 			if (fo == 0x20000 || fo == 0x30000)
 				memset(&confptr->flash[fo], 0xff, 0xffff);
-			printf("erase %05X (%02x)\n", fo+0x80000, data);
+			//printf("erase %05X (%02x)\n", fo+0x80000, data);
 			return;
 		case 7:
 			if (fo == 0xaaa && data == 0xaa) {
@@ -113,7 +113,7 @@ void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t dat
 			break;
 	}
 	if (data == 0xf0) {
-		printf("reset mode\n");
+		//printf("reset mode\n");
 		confptr->flash_mode = 0;
 		return;
 	}
