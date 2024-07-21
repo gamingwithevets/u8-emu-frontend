@@ -20,6 +20,7 @@ struct config
 	uint8_t *sfr;
 	uint8_t *emu_seg;
 	uint8_t (*sfr_write[0x1000])(uint16_t, uint8_t);
+	int flash_mode;
 };
 
 struct config *confptr;
@@ -31,9 +32,7 @@ void add_mem_region(struct u8_core *core, struct u8_mem_reg reg) {
 	if (p = realloc(core->mem.regions, sizeof(struct u8_mem_reg) * core->mem.num_regions)) {
 		core->mem.regions = p;
 		core->mem.regions[core->mem.num_regions-1] = reg;
-	} else {
-		__builtin_unreachable();
-	}
+	} else __builtin_unreachable();
 }
 
 uint8_t read_sfr(struct u8_core *core, uint8_t seg, uint16_t addr) {
@@ -48,6 +47,88 @@ void write_sfr(struct u8_core *core, uint8_t seg, uint16_t addr, uint8_t val) {
 
 uint8_t battery(struct u8_core *core, uint8_t seg, uint16_t addr) {
 	return 0xff;
+}
+
+uint8_t read_flash(struct u8_core *core, uint8_t seg, uint16_t offset) {
+	uint32_t fo = ((seg << 16) + offset) & 0x7ffff;
+	printf("write_flash: read: %05X\n", fo);
+	if (confptr->flash_mode == 6) {
+		confptr->flash_mode = 0;
+		return 0x80;
+	}
+	return confptr->flash[fo];
+}
+
+void write_flash(struct u8_core *core, uint8_t seg, uint16_t offset, uint8_t data) {
+	uint32_t fo = ((seg << 16) + offset) & 0x7ffff;
+	switch (confptr->flash_mode) {
+		case 0:
+			if (fo == 0xaaa && data == 0xaa) {
+				confptr->flash_mode = 1;
+				return;
+			}
+			break;
+		case 1:
+			if (fo == 0x555 && data == 0x55) {
+				confptr->flash_mode = 2;
+				return;
+			}
+			break;
+		case 2:
+			if (fo == 0xAAA && data == 0xA0) {
+				confptr->flash_mode = 3;
+				return;
+			}
+			if (fo == 0xaaa && data == 0x80) {
+				confptr->flash_mode = 4;
+				return;
+			}
+			break;
+		case 3:
+			printf("write_flash: program %x to %x\n", (int)fo, data);
+			confptr->flash[fo] = data;
+			confptr->flash_mode = 0;
+			return;
+		case 4:
+			if (fo == 0xAAA && data == 0xaa) {
+				confptr->flash_mode = 5;
+				return;
+			}
+			break;
+		case 5:
+			if (fo == 0x555 && data == 0x55) {
+				confptr->flash_mode = 6;
+				return;
+			}
+			break;
+		case 6: // we dont know sector's mapping(?)
+			if (fo == 0)
+				memset(&confptr->flash[fo], 0xff, 0x7fff);
+			if (fo == 0x20000 || fo == 0x30000)
+				memset(&confptr->flash[fo], 0xff, 0xffff);
+			printf("write_flash: erase %x (%x)\n", (int)fo, data);
+			return;
+		case 7:
+			if (fo == 0xaaa && data == 0xaa) {
+				confptr->flash_mode = 1;
+				return;
+			}
+			break;
+	}
+	if (data == 0xf0) {
+		printf("write_flash: reset mode\n");
+		confptr->flash_mode = 0;
+		return;
+	}
+	//if (data == 0xb0) {
+	//	printf("Erase Suspend.\n");
+	//	return;
+	//}
+	//if (data == 0x30) {
+	//	printf("Erase Suspend.\n");
+	//	return;
+	//}
+	printf("write_flash: unknown JEDEC %05x = %02x\n", (int)fo, data);
 }
 
 void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_t *flash, int ramstart, int ramsize) {
@@ -104,8 +185,8 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 
 	switch (config->hwid) {
 		// ClassWiz
-		case 4:
-		case 5:
+		case 4:  // LAPIS ML620606
+		case 5:  // LAPIS ML620609
 			// Code segment 1+ mirror
 			add_mem_region(core, (struct u8_mem_reg){
 				.type = U8_REGION_DATA,
@@ -199,9 +280,9 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 				});
 			}
 
-			// fx-5800P stuff
+			// fx-5800P
 			if (config->hwid == 2 && config->is_5800p) {
-				// Flash
+				// Flash (code)
 				core->codemem.regions[1] = (struct u8_mem_reg){
 					.type = U8_REGION_CODE,
 					.rw = false,
@@ -211,14 +292,15 @@ void setup_mcu(struct config *config, struct u8_core *core, uint8_t *rom, uint8_
 					.array = config->flash
 				};
 
-				// Flash but data
+				// Flash (data)
 				add_mem_region(core, (struct u8_mem_reg){
 					.type = U8_REGION_DATA,
-					.rw = false,
+					.rw = true,
 					.addr_l = 0x80000,
 					.addr_h = 0xfffff,
-					.acc = U8_MACC_ARR,
-					.array = config->flash
+					.acc = U8_MACC_FUNC,
+					.read = &read_flash,
+					.write = &write_flash
 				});
 
 				// Flash RAM

@@ -80,7 +80,8 @@ STOP acceptor            1 [{'x' if self.sim.standby.stop_accept[0] else ' '}]  
 STOP mode                [{'x' if self.sim.standby.stop_mode else ' '}]
 Shutdown acceptor        [{'x' if self.sim.shutdown_accept else ' '}]
 Shutdown state           [{'x' if self.sim.shutdown else ' '}]
-Last SWI value           {last_swi if last_swi < 0x40 else 'None'}
+Last SWI value           {last_swi if last_swi < 0x40 else 'None'}\
+{nl+'Flash mode               ' + str(self.sim.sim.c_config.flash_mode) if self.sim.sim.c_config.hwid == 2 and self.sim.is_5800p else ''}\
 {nl+'Counts until next WDTINT ' + str(self.sim.wdt.counter) if self.sim.sim.c_config.hwid == 6 else ''}\
 {(nl+'Instructions per second  ' + (format(self.sim.ips, '.1f') if self.sim.ips is not None and not self.sim.single_step else 'None') if self.sim.enable_ips else '')}\
 '''
