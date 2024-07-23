@@ -522,6 +522,7 @@ class Sim:
 		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
 		self.is_5800p = config.is_5800p if hasattr(config, 'is_5800p') else False
 		self.sample = config.sample if hasattr(config, 'sample') else False
+		self.buffers_no_2bpp = config.buffers_no_2bpp if hasattr(config, 'buffers_no_2bpp') else False
 
 		if self.rom8:
 			tags = list(tool8.read8(config.rom_file))
@@ -660,16 +661,17 @@ class Sim:
 
 		self.screen_stuff = {
 	   # hwid: (alloc, used, rows,buffers,          columns)
-			0: (0x8,   0x8,  3,   [],               64),
-			2: (0x10,  0xc,  32,  [0x80e0 if self.is_5800p else 0x8600], 96),
-			3: (0x10,  0xc,  32,  [0x87d0],         96),
-			4: (0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192),
-			5: (0x20,  0x18, 64,  [0xca54, 0xd654], 192),
-			6: (0x8,   0x8,  192, [None, None],     64),
+			0: [0x8,   0x8,  3,   [],               64],
+			2: [0x10,  0xc,  32,  [0x80e0 if self.is_5800p else 0x8600], 96],
+			3: [0x10,  0xc,  32,  [0x87d0],         96],
+			4: [0x20,  0x18, 64,  [0xddd4, 0xe3d4], 192],
+			5: [0x20,  0x18, 64,  [0xca54, 0xd654], 192],
+			6: [0x8,   0x8,  192, [None, None],     64],
 		}
 
 		if config.hardware_id in self.screen_stuff: self.scr = self.screen_stuff[config.hardware_id]
 		else: self.scr = self.screen_stuff[3]
+		if config.hardware_id != 6 and hasattr(config, 'custom_buffers') and type(config.custom_buffers) == list: self.scr[3] = config.custom_buffers
 
 		# actual peripherals
 		self.disp = peripheral.Screen(self, self.scr)
@@ -1031,9 +1033,11 @@ class Sim:
 			version = self.read_dmem_bytes(0xfff4, 6, 1).decode()
 			rev = self.read_dmem_bytes(0xfffa, 2, 1).decode()
 			csum1 = self.read_dmem(0xfffc, 2, 1)
-			a = int(version.startswith('CY-8'))+1
-			for i in range(0, 0x8000 if self.ko_mode else 0x10000, a): csum -= self.read_dmem(i, a, 0 if self.ko_mode else 8)
-			for i in range(0, 0xfffc, a): csum -= self.read_dmem(i, a, 1)
+			is_2nd = version.startswith('CY-8')
+			for i in range(0x8000 if self.ko_mode else 0x10000): csum -= self.read_dmem(i, 1, 0 if self.ko_mode else 8)
+			for i in range(0xff40 if is_2nd else 0xfffc): csum -= self.read_dmem(i, 1, 1)
+			if is_2nd:
+				for i in range(0xffd0, 0xffd0+0x2c): csum -= self.read_dmem(i, 1, 1)
 			
 			csum %= 0x10000
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
@@ -1359,29 +1363,49 @@ class Sim:
 			screen_data.append(screen_data_raw[1][6])
 			screen_data.append(screen_data_raw[2][49])
 
-		elif config.hardware_id == 4:
-			screen_data_status_bar = [
-			sbar[0]    & 1,  # [S]
-			sbar[1]    & 1,  # [A]
-			sbar[2]    & 1,  # M
-			sbar[3]    & 1,  # ->[x]
-			sbar[5]    & 1,  # √[]/
-			sbar[6]    & 1,  # [D]
-			sbar[7]    & 1,  # [R]
-			sbar[8]    & 1,  # [G]
-			sbar[9]    & 1,  # FIX
-			sbar[0xa]  & 1,  # SCI
-			sbar[0xb]  & 1,  # 𝐄
-			sbar[0xc]  & 1,  # 𝒊
-			sbar[0xd]  & 1,  # ∠
-			sbar[0xe]  & 1,  # ⇩
-			sbar[0xf]  & 1,  # ◀
-			sbar[0x11] & 1,  # ▼
-			sbar[0x12] & 1,  # ▲
-			sbar[0x13] & 1,  # ▶
-			sbar[0x15] & 1,  # ⏸
-			sbar[0x16] & 1,  # ☼
-			]
+		elif config.hardware_id in (4, 5):
+			if config.hardware_id == 4: screen_data_status_bar = [
+				sbar[0]    & 1,  # [S]
+				sbar[1]    & 1,  # [A]
+				sbar[2]    & 1,  # M
+				sbar[3]    & 1,  # ->[x]
+				sbar[5]    & 1,  # √[]/
+				sbar[6]    & 1,  # [D]
+				sbar[7]    & 1,  # [R]
+				sbar[8]    & 1,  # [G]
+				sbar[9]    & 1,  # FIX
+				sbar[0xa]  & 1,  # SCI
+				sbar[0xb]  & 1,  # 𝐄
+				sbar[0xc]  & 1,  # 𝒊
+				sbar[0xd]  & 1,  # ∠
+				sbar[0xe]  & 1,  # ⇩
+				sbar[0xf]  & 1,  # ◀
+				sbar[0x11] & 1,  # ▼
+				sbar[0x12] & 1,  # ▲
+				sbar[0x13] & 1,  # ▶
+				sbar[0x15] & 1,  # ⏸
+				sbar[0x16] & 1,  # ☼
+				]
+			else: screen_data_status_bar = [
+				sbar[1]    & 1,  # [S]
+				sbar[3]    & 1,  # √[]/
+				sbar[4]    & 1,  # [D]
+				sbar[5]    & 1,  # [R]
+				sbar[6]    & 1,  # [G]
+				sbar[7]    & 1,  # FIX
+				sbar[8]    & 1,  # SCI
+				sbar[0xa]  & 1,  # 𝐄
+				sbar[0xb]  & 1,  # 𝒊
+				sbar[0xc]  & 1,  # ∠
+				sbar[0xd]  & 1,  # ⇩
+				sbar[0xe]  & 1,  # (✓)
+				sbar[0x10] & 1,  # ◀
+				sbar[0x11] & 1,  # ▼
+				sbar[0x12] & 1,  # ▲
+				sbar[0x13] & 1,  # ▶
+				sbar[0x15] & 1,  # ⏸
+				sbar[0x16] & 1,  # ☼
+				]
 
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0x18) for k in range(7, -1, -1)] for i in range(63)]
 
@@ -1551,7 +1575,7 @@ class Sim:
 			if disp_lcd:
 				if self.scr[3][disp_lcd-1] is not None: scr_bytes = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
 				if config.hardware_id == 6 and self.scr[3][0] is not None: scr_bytes = [0 if self.scr[3][1] is None else int.from_bytes(self.read_dmem_bytes(self.scr[3][1], 3), 'little')] + scr_bytes
-				if config.hardware_id == 5:
+				if config.hardware_id == 5 and not self.buffers_no_2bpp:
 					scr_bytes_hi = [self.read_dmem_bytes(self.scr[3][disp_lcd-1] + self.scr[1]*self.scr[2] + i*self.scr[1], self.scr[1]) for i in range(self.scr[2])]
 					screen_data_status_bar, screen_data = self.get_scr_data_cwii(tuple(scr_bytes), tuple(scr_bytes_hi))
 				elif self.scr[3][disp_lcd-1] is not None: screen_data_status_bar, screen_data = self.get_scr_data(*scr_bytes)

@@ -28,10 +28,17 @@ hardware_id = 3
 # Enable this for "sample" CW ROMs. (optional)
 sample = False
 
-# Toggle Graph Light mode. Optional; default = False. Hardware type 5 only.
+# Toggle Graph Light mode. Optional; default = False. ClassWiz CW only.
 is_graphlight = False
 
-# Toggle fx-5800P mode. Optional; default = False. Hardware type 2 only.
+# Custom buffers. If this is a list, it overwrites the internal screen buffer list.
+# Not applicable for TI MathPrint.
+custom_buffers = None
+
+# Disable 2BPP mode for buffers. ClassWiz CW only.
+custom_buffers_no_2bpp = False
+
+# Toggle fx-5800P mode. Optional; default = False. ES only.
 is_5800p = False
 
 # Path to the flash ROM. fx-5800P mode only.
@@ -42,8 +49,8 @@ real_hardware = False
 
 # KO mode. ES PLUS hardware type only. If omitted or has an invalid value, 0 will be used.
 # NOTE: Also defines the hardware subtype of ES PLUS.
-# 0 = Use F046H for KO
-# 1 = Use F044H for KO (inverted)
+# 0 = Later ES PLUS - Use F046H for KO (default)
+# 1 = Early ES PLUS - Use F044H for KO
 ko_mode = 0
 
 # Pd value. Set on startup.
