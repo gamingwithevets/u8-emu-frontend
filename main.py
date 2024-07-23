@@ -1066,9 +1066,7 @@ class Sim:
 			
 			csum %= 0x10000
 			text = f'{version}\nV.{rev} Bt OK\nSUM{csum:04X} {"OK" if csum == csum1 else "NG"}'
-		else:
-			tk.messagebox.showinfo('ROM info only supports ES PLUS and ClassWiz.')
-			return
+		else: text = 'ROM info only supports ES PLUS and ClassWiz.'
 		
 		tk.messagebox.showinfo('ROM info', text)
 
