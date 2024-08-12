@@ -4,8 +4,6 @@ def write_std_string(f, string):
 	f.write(len(string).to_bytes(8, 'little'))
 	f.write(string)
 
-def tuple_to_color(color): return (0xff << 24) | (color[0] << 16) | (color[1] << 8) | color[2]
-
 class TemplateClass:
 	def __str__(self): return f'{self.__class__.__name__}({", ".join(k+"="+repr(v) for k, v in vars(self).items())})'
 	def __repr__(self): return self.__str__()
@@ -22,6 +20,21 @@ class SDL_Rect(TemplateClass):
 		f.write(self.y.to_bytes(4, 'little'))
 		f.write(self.w.to_bytes(4, 'little'))
 		f.write(self.h.to_bytes(4, 'little'))
+
+class color_info:
+	def __init__(self, r, g, b):
+		self.r = r
+		self.g = g
+		self.b = b
+
+	def to_file(self, f):
+		f.write(self.r.to_bytes(1, 'little'))
+		f.write(self.g.to_bytes(1, 'little'))
+		f.write(self.b.to_bytes(1, 'little'))
+
+	def __str__(self): return f'{self.__class__.__name__}({", ".join(k+"="+repr(v) for k, v in vars(self).items())})'
+	def __repr__(self): return self.__str__()
+
 
 class keydata(TemplateClass):
 	# not generated with ChatGPT I swear
@@ -54,7 +67,9 @@ class keydata(TemplateClass):
 	def to_file(self, f):
 		self.rect.to_file(f)
 		f.write(len(self.keys).to_bytes(8, 'little'))
-		for key in self.keys: f.write(self.sdl_keycodes[key].to_bytes(4, 'little'))
+		for key in self.keys:
+			if key in self.sdl_keycodes:
+			f.write(self.sdl_keycodes[key].to_bytes(4, 'little'))
 
 class config(TemplateClass):
 	def __init__(self, config):
@@ -74,7 +89,7 @@ class config(TemplateClass):
 		self.screen_tl_h = config.screen_tl_h
 		self.pix_w = config.pix
 		self.pix_h = config.pix_hi if hasattr(config, 'pix_hi') else config.pix
-		self.pix_color = config.pix_color if hasattr(config, 'pix_color') else (0, 0, 0)
+		self.pix_color = color_info(*config.pix_color) if hasattr(config, 'pix_color') else color_info(0, 0, 0)
 		self.status_bar_crops = [SDL_Rect(*v) for v in config.status_bar_crops] if hasattr(config, 'status_bar_crops') else []
 		self.keymap = {(k[1] << 4 | k[0] if type(k) == tuple else (0xff if k is None else k)): keydata(v[0], v[1:]) for k, v in config.keymap.items()} if hasattr(config, 'keymap') else {}
 
@@ -97,11 +112,16 @@ class config(TemplateClass):
 		f.write(self.screen_tl_h.to_bytes(4, 'little'))
 		f.write(self.pix_w.to_bytes(4, 'little'))
 		f.write(self.pix_h.to_bytes(4, 'little'))
-		f.write(tuple_to_color(self.pix_color).to_bytes(4, 'little'))
+		self.pix_color.to_file(f)
 		f.write(len(self.status_bar_crops).to_bytes(8, 'little'))
 		for a in self.status_bar_crops: a.to_file(f)
 
 		f.write(len(self.keymap).to_bytes(8, 'little'))
+		i = 0
 		for k, v in self.keymap.items():
+			if i == 5:
+				print('WARNING: Only up to 5 keys are supported!')
+				break
 			f.write(k.to_bytes(1, 'little'))
 			v.to_file(f)
+			i += 1
