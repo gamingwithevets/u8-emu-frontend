@@ -6,7 +6,6 @@ class Timer:
 
 		self.nsps = 1e9
 		self.max_ns_per_update = 1e9
-		self.max_ticks_per_update = 100
 		self.tps = 10000
 		self.last_time = 0
 		self.passed_time = 0

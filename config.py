@@ -36,7 +36,7 @@ is_graphlight = False
 custom_buffers = None
 
 # Disable 2BPP mode for buffers. ClassWiz CW only.
-custom_buffers_no_2bpp = False
+buffers_no_2bpp = False
 
 # Toggle fx-5800P mode. Optional; default = False. ES only.
 is_5800p = False
