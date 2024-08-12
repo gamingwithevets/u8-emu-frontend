@@ -68,7 +68,9 @@ class keydata(TemplateClass):
 		self.rect.to_file(f)
 		f.write(len(self.keys).to_bytes(8, 'little'))
 		for key in self.keys:
-			if key in self.sdl_keycodes:
+			if key not in self.sdl_keycodes:
+				print(f'ERROR: key {key} not in valid keycodes list, skipping\n(If this is a valid Tkinter key, please create an issue on GitHub)')
+				continue
 			f.write(self.sdl_keycodes[key].to_bytes(4, 'little'))
 
 class config(TemplateClass):
@@ -117,11 +119,6 @@ class config(TemplateClass):
 		for a in self.status_bar_crops: a.to_file(f)
 
 		f.write(len(self.keymap).to_bytes(8, 'little'))
-		i = 0
 		for k, v in self.keymap.items():
-			if i == 5:
-				print('WARNING: Only up to 5 keys are supported!')
-				break
 			f.write(k.to_bytes(1, 'little'))
 			v.to_file(f)
-			i += 1
