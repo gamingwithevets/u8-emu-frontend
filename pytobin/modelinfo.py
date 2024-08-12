@@ -79,7 +79,7 @@ class config(TemplateClass):
 		self.keymap = {(k[1] << 4 | k[0] if type(k) == tuple else (0xff if k is None else k)): keydata(v[0], v[1:]) for k, v in config.keymap.items()} if hasattr(config, 'keymap') else {}
 
 	def to_file(self, f):
-		f.write(b'Genshit configuration file v69')
+		write_std_string(f, b'Genshit configuration file v69')
 
 		write_std_string(f, self.rom_file)
 		write_std_string(f, self.flash_rom_file)
