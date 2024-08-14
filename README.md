@@ -1,3 +1,8 @@
+***NOTICE!***  
+This frontend is now being replaced by the faster [u8-emu-frontend-cpp](https://github.com/gamingwithevets/u8-emu-frontend-cpp).
+
+---
+
 This is a **frontend** for [Fraser Price / Fraserbc / Delta](https://github.com/Fraserbc)'s [u8_emu](https://github.com/Fraserbc/u8_emu) emulator core, written in mostly Python, with a small bit of C code included.  
 **NOTE:** This frontend uses a **fork** of the aforementioned emulator core.  
 Most of the code was based on the [SimU8 frontend](https://github.com/gamingwithevets/simu8-frontend).

@@ -16,5 +16,8 @@ if __name__ == '__main__':
 		sys.modules['config'] = config
 		spec.loader.exec_module(config)
 
-	a = modelinfo.config(config)
-	with open(sys.argv[2], 'wb') as f: a.to_file(f)
+	try:
+		a = modelinfo.config(config)
+		with open(sys.argv[2], 'wb') as f: a.to_file(f)
+	except Exception as e:
+		print(f'ERROR: {str(e)}')
