@@ -1454,7 +1454,7 @@ class Sim:
 				sbar[0xa] & (1 << 6),  # Math
 				sbar[0xa] & (1 << 3),  # ▼
 				sbar[0xb] & (1 << 7),  # ▲
-				sbar[0xb] & (1 << 4),  # Dis
+				sbar[0xb] & (1 << 4),  # Disp
 				]
 			
 			screen_data = [[3 if scr_bytes[1+i][j] & (1 << k) else 0 for j in range(0xc) for k in range(7, -1, -1)] for i in range(31)]
