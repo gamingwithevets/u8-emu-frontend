@@ -148,19 +148,20 @@ class keydata(TemplateClass):
 
 	def __init__(self, rect, keys):
 		self.rect = SDL_Rect(*rect)
-		self.keys = keys
-
-	def to_file(self, f):
-		self.rect.to_file(f)
-		f.write(len(self.keys).to_bytes(8, 'little'))
-		for key in self.keys:
+		self.keys = []
+		for key in keys:
 			if not key: continue
 			if key not in self.sdl_keycodes:
 				print(f'WARNING: key {key} not in valid keycodes list, skipping\n(If this is a valid Tkinter key, please create an issue on GitHub)')
 				continue
 			if self.sdl_keycodes[key] == 0:
 				print(f'WARNING: key {key} does not map to a valid SDL2 keycode, skipping')
-			f.write(self.sdl_keycodes[key].to_bytes(4, 'little'))
+			self.keys.append(key)
+
+	def to_file(self, f):
+		self.rect.to_file(f)
+		f.write(len(self.keys).to_bytes(8, 'little'))
+		for key in self.keys: f.write(self.sdl_keycodes[key].to_bytes(4, 'little'))
 
 class config(TemplateClass):
 	def __init__(self, config):
