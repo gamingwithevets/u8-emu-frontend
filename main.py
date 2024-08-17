@@ -240,6 +240,8 @@ class Core:
 			self.register_sfr(0x410, 1)                 # BCDFLG
 			# F414H: BCDLLZ, F415H: BCDMLZ (both read-only)
 			for i in range(4): self.register_sfr(0x480 + i*0x20, 12)  # BCDREG000 - BCDREG311
+
+		if config.hardware_id == 6: self.register_sfr(0x901, 1, lambda a, v: int(not v))
 	
 	def u8_reset(self): sim_lib.u8_reset(ctypes.pointer(self.core))
 
