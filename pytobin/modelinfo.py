@@ -1,3 +1,4 @@
+import os
 import copy
 
 def write_std_string(f, string):
@@ -187,7 +188,7 @@ class config(TemplateClass):
 
 		self.width = config.width if hasattr(config, 'width') else 0
 		self.height = config.height if hasattr(config, 'height') else 0
-		self.ram = f'ram/{self.rom_file[:-4].decode()}'.encode()
+		self.ram = f'ram/{os.path.basename(config.__file__)[7:-3]}.bin'.encode()
 
 	def to_file(self, f):
 		write_std_string(f, b'Genshit configuration file v69')
