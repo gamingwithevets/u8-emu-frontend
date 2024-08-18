@@ -185,6 +185,10 @@ class config(TemplateClass):
 		self.status_bar_crops = [SDL_Rect(*v) for v in config.status_bar_crops] if hasattr(config, 'status_bar_crops') else []
 		self.keymap = {(k[1] << 4 | k[0] if type(k) == tuple else (0xff if k is None else k)): keydata(v[0], v[1:]) for k, v in config.keymap.items()} if hasattr(config, 'keymap') else {}
 
+		self.width = config.width if hasattr(config, 'width') else 0
+		self.height = config.height if hasattr(config, 'height') else 0
+		self.ram = f'ram/{self.rom_file[:-4].decode()}'.encode()
+
 	def to_file(self, f):
 		write_std_string(f, b'Genshit configuration file v69')
 
@@ -212,3 +216,7 @@ class config(TemplateClass):
 		for k, v in self.keymap.items():
 			f.write(k.to_bytes(1, 'little'))
 			v.to_file(f)
+
+		f.write(self.width.to_bytes(4, 'little'))
+		f.write(self.height.to_bytes(4, 'little'))
+		write_std_string(f, self.ram)
