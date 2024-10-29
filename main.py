@@ -508,7 +508,7 @@ class DebounceTk(Debounce, tk.Tk): pass
 
 class Sim:
 	def __init__(self, no_clipboard, bcd):
-		self.copyclip = no_clipboard
+		self.copyclip = not no_clipboard
 
 		try:
 			im = PIL.Image.open(config.status_bar_path)
