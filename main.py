@@ -1041,8 +1041,19 @@ class Sim:
 			if is_2nd:
 				for i in range(0xffd0, 0xffd0+0x2c): csum -= self.read_dmem(i, 1, 1)
 			
-			csum %= 0x10000
+			csum &= 0xffff
 			text = f'{version} Ver{rev}\nSUM {csum:04X} {"OK" if csum == csum1 else "NG"}'
+			if is_2nd:
+				idstr = '--'
+				for i in range(0xffc0, 0xffce):
+					if self.read_dmem(i, 1, 1) != 0: idstr = 'NG'
+				if idstr == 'NG':
+					_csum = 0
+					_csum1 = self.read_dmem(0xffce, 2, 1)
+					for i in range(0xff40, 0xffce): _csum -= self.read_dmem(i, 1, 1)
+					_csum &= 0xffff
+					if _csum == _csum1: idstr = 'OK'
+				text += f' ID{idstr}'
 		elif config.hardware_id == 4:
 			version = self.read_dmem_bytes(0xffee, 6, 3).decode()
 			rev = self.read_dmem_bytes(0xfff4, 2, 3).decode()
