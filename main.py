@@ -24,7 +24,6 @@ no_clipboard = False
 try:
 	if os.name == 'nt': import win32clipboard
 	else: import klembord
-	no_clipboard = True
 except ImportError: no_clipboard = True
 try: import tkinter as tk
 except ImportError:

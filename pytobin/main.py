@@ -1,5 +1,5 @@
 import sys
-import importlib
+import importlib.util
 import modelinfo
 
 if __name__ == '__main__':
